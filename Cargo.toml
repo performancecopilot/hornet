@@ -1,0 +1,7 @@
+[package]
+name = "hornet"
+version = "0.1.0"
+authors = ["Saurav Sachidanand <sauravsachidanand@gmail.com>"]
+license = "MIT OR Apache-2.0"
+description = "A Rust implementation of the PCP instrumentation API"
+repository = "https://github.com/performancecopilot/hornet"
