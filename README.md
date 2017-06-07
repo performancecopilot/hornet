@@ -1,4 +1,4 @@
-# hornet [![Travis CI Build Status](https://travis-ci.org/performancecopilot/hornet.svg?branch=master)](https://travis-ci.org/performancecopilot/hornet)
+# hornet [![Travis CI Build Status](https://travis-ci.org/performancecopilot/hornet.svg?branch=master)](https://travis-ci.org/performancecopilot/hornet) [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/ccvbo3chne8046vn/branch/master?svg=true)](https://ci.appveyor.com/project/saurvs/hornet-2qtki/branch/master)
 
 This is a work-in-progress PCP Memory Mapped Value (MMV) instrumentation API in Rust.
 

@@ -43,3 +43,7 @@ test_script:
 cache:
   - target
   - C:\Users\appveyor\.cargo\registry
+
+matrix:
+  allow_failures:
+    - channel: nightly
