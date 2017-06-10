@@ -46,4 +46,5 @@ cache:
 
 matrix:
   allow_failures:
+    - channel: beta
     - channel: nightly
