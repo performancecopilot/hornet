@@ -5,3 +5,20 @@ authors = ["Saurav Sachidanand <sauravsachidanand@gmail.com>"]
 license = "MIT OR Apache-2.0"
 description = "A Rust implementation of the PCP instrumentation API"
 repository = "https://github.com/performancecopilot/hornet"
+
+[dependencies]
+bitflags = "0.9.1"
+byteorder = "1.0.0"
+lazy_static = "0.2.8"
+memmap = "0.5.2"
+regex = "0.2"
+time = "0.1"
+
+[dev-dependencies]
+rand = "0.3.15"
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.8.0"
+
+[target.'cfg(windows)'.dependencies]
+kernel32-sys = "0.2.2"
