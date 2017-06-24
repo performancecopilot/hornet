@@ -297,7 +297,7 @@ impl<T: MetricType + Clone> Metric<T> {
 /// PCP MMV Metric
 ///
 /// Useful for dealing with collections of Metrics with different
-/// value types.
+/// value types, and also implementing custom MMV writers.
 pub trait MMVMetric {
     fn name(&self) -> &str;
     fn item(&self) -> u32;
@@ -333,6 +333,47 @@ impl<T: MetricType> MMVMetric for Metric<T> {
     fn set_mmap_view(&mut self, mmap_view: MmapViewSync) {
         self.mmap_view = mmap_view;
     }
+}
+
+#[test]
+fn test_units() {
+    assert_eq!(Unit::empty().pmapi_repr(), 0);
+
+    assert_eq!(SPACE_UNIT.pmapi_repr(), 1 << 28);
+    assert_eq!(TIME_UNIT.pmapi_repr(), 1 << 24);
+    assert_eq!(COUNT_UNIT.pmapi_repr(), 1 << 20);
+
+    assert_eq!(
+        Unit::space(SpaceScale::KByte).pmapi_repr(),
+        1 << 28 | (SpaceScale::KByte as u32) << 16
+    );
+    assert_eq!(
+        Unit::time(TimeScale::Min).pmapi_repr(),
+        1 << 24 | (TimeScale::Min as u32) << 12
+    );
+    assert_eq!(
+        Unit::count().pmapi_repr(),
+        1 << 20 | (CountScale::One as u32) << 8
+    );
+
+    let (space_dim, time_dim, count_dim) = (-3, -2, 1);
+    let unit = Unit {
+        space_scale: SpaceScale::EByte,
+        time_scale: TimeScale::Hour,
+        count_scale: CountScale::One,
+        space_dim: space_dim,
+        time_dim: time_dim,
+        count_dim: count_dim
+    };
+    assert_eq!(
+        unit.pmapi_repr(),
+        ((space_dim as u32) & ((1 << 4) - 1)) << 28 |
+        ((time_dim as u32) & ((1 << 4) - 1)) << 24 |
+        ((count_dim as u32) & ((1 << 4) - 1)) << 20 |
+        (SpaceScale::EByte as u32) << 16 |
+        (TimeScale::Hour as u32) << 12 |
+        (CountScale::One as u32) << 8
+    );
 }
 
 #[test]

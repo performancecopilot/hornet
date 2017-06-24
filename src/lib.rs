@@ -212,9 +212,7 @@ impl Client {
             mmv_path: mmv_path
         })
     }
-
-   
-
+    
     /// Exports metrics by writing to an MMV file
     pub fn export(&self, mut metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
         let mut wi = MMVWriterInfo::new();
