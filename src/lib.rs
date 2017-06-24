@@ -213,12 +213,16 @@ impl Client {
         })
     }
 
+   
+
     /// Exports metrics by writing to an MMV file
     pub fn export(&self, mut metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
         let mut wi = MMVWriterInfo::new();
         wi.n_metrics = metrics.len() as u64;
         wi.n_strings = wi.n_metrics*2
-            + metrics.iter().filter(|m| m.type_code() == metric::STRING_METRIC_TYPE_CODE).count() as u64;
+            + metrics.iter()
+                .filter(|m| m.type_code() == metric::STRING_METRIC_TYPE_CODE)
+                .count() as u64;
         let mmv_size = (
             HDR_LEN + 3*TOC_BLOCK_LEN
             + wi.n_metrics*(METRIC_BLOCK_LEN + VALUE_BLOCK_LEN)
@@ -229,7 +233,8 @@ impl Client {
             .open(&self.mmv_path)?;
         file.write(&vec![0; mmv_size])?;
 
-        let mmap_view = Mmap::open(&file, Protection::ReadWrite)?.into_view_sync();
+        let mmap_view = Mmap::open(&file, Protection::ReadWrite)?
+            .into_view_sync();
 
         let mut mmv_view = unsafe { mmap_view.clone() };
         let mut c = Cursor::new(unsafe { mmv_view.as_mut_slice() });
@@ -283,7 +288,8 @@ impl Client {
         // no. of entries
         c.write_u32::<Endian>(wi.n_metrics as u32)?;
         // section offset
-        wi.value_sec_off = wi.metric_sec_off + METRIC_BLOCK_LEN*wi.n_metrics;
+        wi.value_sec_off = wi.metric_sec_off
+            + METRIC_BLOCK_LEN*wi.n_metrics;
         c.write_u64::<Endian>(wi.value_sec_off)
     }
 
@@ -294,8 +300,10 @@ impl Client {
         // no. of entries
         c.write_u32::<Endian>(2*wi.n_metrics as u32)?;
         // section offset
-        wi.string_sec_off = wi.value_sec_off + VALUE_BLOCK_LEN*wi.n_metrics;
-        wi.string_vals_off = wi.string_sec_off + STRING_BLOCK_LEN*2*wi.n_metrics;
+        wi.string_sec_off = wi.value_sec_off
+            + VALUE_BLOCK_LEN*wi.n_metrics;
+        wi.string_vals_off = wi.string_sec_off
+            + STRING_BLOCK_LEN*2*wi.n_metrics;
         c.write_u64::<Endian>(wi.string_sec_off)
     }
 
@@ -341,7 +349,7 @@ impl Client {
                 string_val_off_off = Some(c.position());
                 c.write_u64::<Endian>(0)?;
             } else {
-                m.write_value(&mut c)?;
+                m.write_val(&mut c)?;
                 c.write_u64::<Endian>(0)?;
             }
             // offset to metric block
@@ -371,10 +379,11 @@ impl Client {
             match string_val_off_off {
                 Some(off_off) => {
                     c.set_position(off_off);
-                    let string_val_off = wi.string_vals_off + string_metric_idx*STRING_BLOCK_LEN;
+                    let string_val_off = wi.string_vals_off
+                        + string_metric_idx*STRING_BLOCK_LEN;
                     c.write_u64::<Endian>(string_val_off)?;
                     c.set_position(string_val_off);
-                    m.write_value(&mut c)?;
+                    m.write_val(&mut c)?;
                     string_metric_idx += 1;
                 },
                 None => {}
@@ -393,10 +402,13 @@ impl Client {
         let mut right_view = mmap_view;
         let mut left_mid_len = 0;
 
-        // split views for non-string valued metrics
+        // split views for non-string valued metrics first because value blocks
+        // are stored before string blocks
+
         for (i, m) in metrics.iter_mut().enumerate() {
             if m.type_code() != metric::STRING_METRIC_TYPE_CODE {
-                let value_block_off = (wi.value_sec_off as usize) + i*(VALUE_BLOCK_LEN as usize);
+                let value_block_off = (wi.value_sec_off as usize)
+                    + i*(VALUE_BLOCK_LEN as usize);
 
                 let (left_view, mid_view, r_view) =
                     split_view(right_view, value_block_off - left_mid_len, 8)?;
@@ -407,14 +419,16 @@ impl Client {
             }
         }
 
-        // split views for string valued metrics
         for (i, m) in metrics.iter_mut()
-            .filter(|m| m.type_code() == metric::STRING_METRIC_TYPE_CODE).enumerate() {
+            .filter(|m| m.type_code() == metric::STRING_METRIC_TYPE_CODE)
+            .enumerate() {
                 
-            let string_val_off = (wi.string_vals_off as usize) + i*(STRING_BLOCK_LEN as usize);
+            let string_val_off = (wi.string_vals_off as usize)
+                + i*(STRING_BLOCK_LEN as usize);
             
             let (left_view, mid_view, r_view) =
-                split_view(right_view, string_val_off - left_mid_len, STRING_BLOCK_LEN as usize)?;
+                split_view(right_view, string_val_off - left_mid_len,
+                    STRING_BLOCK_LEN as usize)?;
             right_view = r_view;
             left_mid_len += left_view.len() + mid_view.len();
 
