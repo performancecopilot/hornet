@@ -21,10 +21,12 @@ use super::{
     METRIC_BLOCK_LEN,
     VALUE_BLOCK_LEN,
     STRING_BLOCK_LEN,
+    NUMERIC_VALUE_SIZE,
     METRIC_NAME_MAX_LEN,
-    MIN_STRINGS_PER_METRIC
+    MAX_STRINGS_PER_METRIC,
+    TOC_BLOCK_COUNT
 };
-use super::metric::{Metric, STRING_METRIC_TYPE_CODE};
+use super::metric::{Metric, MetricType, MMVMetric, STRING_METRIC_TYPE_CODE};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -153,6 +155,7 @@ bitflags! {
 }
 
 struct MMVWriterInfo {
+    mmap_view: Option<MmapViewSync>,
     n_metrics: u64,
     n_strings: u64,
     gen: i64,
@@ -160,12 +163,14 @@ struct MMVWriterInfo {
     metric_sec_off: u64,
     value_sec_off: u64,
     string_sec_off: u64,
-    string_vals_off: u64
+    metric_idx: u64,
+    n_strings_off: u64
 }
 
 impl MMVWriterInfo {
     fn new() -> Self {
         MMVWriterInfo {
+            mmap_view: None,
             n_metrics: 0,
             n_strings: 0,
             gen: 0,
@@ -173,7 +178,8 @@ impl MMVWriterInfo {
             metric_sec_off: 0,
             value_sec_off: 0,
             string_sec_off: 0,
-            string_vals_off: 0
+            metric_idx: 0,
+            n_strings_off: 0
         }
     }
 }
@@ -182,7 +188,8 @@ impl MMVWriterInfo {
 pub struct Client {
     flags: MMVFlags,
     cluster_id: u32,
-    mmv_path: PathBuf
+    mmv_path: PathBuf,
+    wi: MMVWriterInfo
 }
 
 impl Client {
@@ -203,45 +210,53 @@ impl Client {
         Ok(Client {
             flags: flags,
             cluster_id: cluster_id,
-            mmv_path: mmv_path
+            mmv_path: mmv_path,
+            wi: MMVWriterInfo::new()
         })
     }
-    
-    /// Exports metrics by writing to an MMV file
-    pub fn export(&self, mut metrics: &mut [&mut Metric]) -> io::Result<()> {
-        let mut wi = MMVWriterInfo::new();
-        wi.n_metrics = metrics.len() as u64;
-        wi.n_strings = wi.n_metrics*MIN_STRINGS_PER_METRIC
-            + metrics.iter()
-                .filter(|m| m.type_code() == STRING_METRIC_TYPE_CODE)
-                .count() as u64;
+
+    pub fn begin(&mut self, n_metrics: u64) -> io::Result<&mut Client> {
+        self.wi.n_metrics = n_metrics;
         let mmv_size = (
-            HDR_LEN + 3*TOC_BLOCK_LEN
-            + wi.n_metrics*(METRIC_BLOCK_LEN + VALUE_BLOCK_LEN)
-            + wi.n_strings*STRING_BLOCK_LEN
+            HDR_LEN + TOC_BLOCK_COUNT*TOC_BLOCK_LEN
+            + self.wi.n_metrics*(METRIC_BLOCK_LEN + VALUE_BLOCK_LEN)
+            + self.wi.n_metrics*MAX_STRINGS_PER_METRIC*STRING_BLOCK_LEN
         ) as usize;
         
         let mut file = OpenOptions::new().read(true).write(true).create(true)
             .open(&self.mmv_path)?;
         file.write(&vec![0; mmv_size])?;
 
-        let mmap_view = Mmap::open(&file, Protection::ReadWrite)?
+        let mut mmap_view = Mmap::open(&file, Protection::ReadWrite)?
             .into_view_sync();
-
-        let mut mmv_view = unsafe { mmap_view.clone() };
-        let mut c = Cursor::new(unsafe { mmv_view.as_mut_slice() });
 
         /*
             The layout of the MMV is as follows:
+
             --- MMV Header
+            
             --- Metrics TOC Block
+            
             --- Values TOC Block
+
             --- Strings TOC Block
-            --- Metrics Block
-            --- Values Block
-            --- Strings Block
-                --- Help text (short and long) block
-                --- String values block
+
+            --- Metrics section
+                --- metric block 1
+                --- metric block 2
+                --- ...
+
+            --- Values section
+                --- value block for metric 1
+                --- value block for metric 2
+                --- ...
+
+            --- Strings section
+                --- (optional) short help text for metric 1
+                --- (optional) long help text  for metric 1
+                --- (optional) string value    for metric 1 
+                --- (optional) short help text for metric 2
+                --- ...
             
             After writing, every metric is given ownership
             of the respective memory-mapped slice that contains
@@ -249,87 +264,87 @@ impl Client {
             is *only* able to write to it's value slice when updating
             it's value.
         */
+ 
+        {
+            let mut cur = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+            self.write_mmv_header(&mut cur)?;
+            self.write_metric_toc_block(&mut cur)?;
+            self.write_values_toc_block(&mut cur)?;
+            self.write_strings_toc_block(&mut cur)?;
+        }
 
-        self.write_mmv_header(&mut c, &mut wi)?;
-        self.write_metric_toc_block(&mut c, &mut wi)?;
-        self.write_values_toc_block(&mut c, &mut wi)?;
-        self.write_strings_toc_block(&mut c, &mut wi)?;
-        self.write_metrics(&mut c, &mut wi, &mut metrics)?;
-        self.unlock_mmv_header(&mut c, &wi)?;
-
-        self.split_mmap_views(unsafe { mmap_view.clone() }, &wi, &mut metrics)
+        self.wi.mmap_view = Some(mmap_view);
+        Ok(self)
     }
 
-    fn write_mmv_header(&self, cursor: &mut Cursor<&mut [u8]>,
-        wi: &mut MMVWriterInfo) -> io::Result<()> {    
+    fn write_mmv_header(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {    
         // MMV\0
-        cursor.write_all(CString::new("MMV")?.to_bytes_with_nul())?;
+        c.write_all(CString::new("MMV")?.to_bytes_with_nul())?;
         // version
-        cursor.write_u32::<Endian>(1)?;
+        c.write_u32::<Endian>(1)?;
         // generation1
-        wi.gen = time::now().to_timespec().sec;
-        cursor.write_i64::<Endian>(wi.gen)?;
+        self.wi.gen = time::now().to_timespec().sec;
+        c.write_i64::<Endian>(self.wi.gen)?;
         // generation2
-        wi.gen2off = cursor.position();
-        cursor.write_i64::<Endian>(0)?;
+        self.wi.gen2off = c.position();
+        c.write_i64::<Endian>(0)?;
         // no. of toc blocks
-        cursor.write_i32::<Endian>(3)?;
+        c.write_u32::<Endian>(TOC_BLOCK_COUNT as u32)?;
         // flags
-        cursor.write_u32::<Endian>(self.flags.bits())?;
+        c.write_u32::<Endian>(self.flags.bits())?;
         // pid
-        cursor.write_i32::<Endian>(get_process_id())?;
+        c.write_i32::<Endian>(get_process_id())?;
         // cluster id
-        cursor.write_u32::<Endian>(self.cluster_id)
+        c.write_u32::<Endian>(self.cluster_id)
     }
-
-    fn write_metric_toc_block(&self, c: &mut Cursor<&mut [u8]>,
-        wi: &mut MMVWriterInfo) -> io::Result<()> {
+    
+    fn write_metric_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
         // section type
         c.write_u32::<Endian>(3)?;
         // no. of entries
-        c.write_u32::<Endian>(wi.n_metrics as u32)?;
+        c.write_u32::<Endian>(self.wi.n_metrics as u32)?;
         // section offset
-        wi.metric_sec_off = HDR_LEN + TOC_BLOCK_LEN*3;
-        c.write_u64::<Endian>(wi.metric_sec_off)
+        self.wi.metric_sec_off = HDR_LEN + TOC_BLOCK_LEN*TOC_BLOCK_COUNT;
+        c.write_u64::<Endian>(self.wi.metric_sec_off)
     }
 
-    fn write_values_toc_block(&self, c: &mut Cursor<&mut [u8]>,
-        wi: &mut MMVWriterInfo) -> io::Result<()> {
+    fn write_values_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
         // section type
         c.write_u32::<Endian>(4)?;
         // no. of entries
-        c.write_u32::<Endian>(wi.n_metrics as u32)?;
+        c.write_u32::<Endian>(self.wi.n_metrics as u32)?;
         // section offset
-        wi.value_sec_off = wi.metric_sec_off
-            + METRIC_BLOCK_LEN*wi.n_metrics;
-        c.write_u64::<Endian>(wi.value_sec_off)
+        self.wi.value_sec_off = self.wi.metric_sec_off + METRIC_BLOCK_LEN*self.wi.n_metrics;
+        c.write_u64::<Endian>(self.wi.value_sec_off)
     }
 
-    fn write_strings_toc_block(&self, c: &mut Cursor<&mut [u8]>,
-        wi: &mut MMVWriterInfo) -> io::Result<()> {
+    fn write_strings_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
         // section type
         c.write_u32::<Endian>(5)?;
         // no. of entries
-        c.write_u32::<Endian>(2*wi.n_metrics as u32)?;
+        self.wi.n_strings_off = c.position();
+        c.write_u32::<Endian>(self.wi.n_strings as u32)?;
         // section offset
-        wi.string_sec_off = wi.value_sec_off
-            + VALUE_BLOCK_LEN*wi.n_metrics;
-        wi.string_vals_off = wi.string_sec_off
-            + STRING_BLOCK_LEN*2*wi.n_metrics;
-        c.write_u64::<Endian>(wi.string_sec_off)
+        self.wi.string_sec_off = self.wi.value_sec_off + VALUE_BLOCK_LEN*self.wi.n_metrics;
+        c.write_u64::<Endian>(self.wi.string_sec_off)
     }
 
-    fn write_metrics(&self, mut c: &mut Cursor<&mut [u8]>, wi: &mut MMVWriterInfo,
-        metrics: &mut [&mut Metric]) -> io::Result<()> {
+    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut MMVMetric<T>) -> io::Result<&mut Client> {
 
-        let mut string_metric_idx = 0;
+        // TODO: return custom error instead of panicing
+        assert!(self.wi.metric_idx < self.wi.n_metrics);
 
-        // metric, value, string blocks
-        for (i, m) in metrics.iter_mut().enumerate() {
-            let i = i as u64;
-            
+        let (mut value_offset, mut value_size) = (0, 0);
+
+        { // write metric, value, string blocks
+
+            let mmap_view = self.wi.mmap_view.as_mut().unwrap();
+            let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+
+            let i = self.wi.metric_idx;
+
             // metric block
-            let metric_block_off = wi.metric_sec_off + i*METRIC_BLOCK_LEN;
+            let metric_block_off = self.wi.metric_sec_off + i*METRIC_BLOCK_LEN;
             c.set_position(metric_block_off);
             // name
             c.write_all(CString::new(m.name())?.to_bytes_with_nul())?;
@@ -349,19 +364,27 @@ impl Client {
             c.write_u32::<Endian>(0)?;
             // record short and long help offset
             let shorthelp_off_off = c.position();
-            let longhelp_off_off = shorthelp_off_off + 8;
+            c.write_u64::<Endian>(0)?;
+            let longhelp_off_off = c.position();
+            c.write_u64::<Endian>(0)?;
 
             // value block
-            let value_block_off = wi.value_sec_off + i*VALUE_BLOCK_LEN;
+            let value_block_off = self.wi.value_sec_off + i*VALUE_BLOCK_LEN;
             c.set_position(value_block_off);
-            // value (for non-string values) and extra (for string values)
             let mut string_val_off_off = None;
             if type_code == STRING_METRIC_TYPE_CODE {
+                // value
                 c.write_u64::<Endian>(0)?;
+                // extra (string offset)
                 string_val_off_off = Some(c.position());
                 c.write_u64::<Endian>(0)?;
             } else {
+                value_offset = c.position() as usize;
+                value_size = NUMERIC_VALUE_SIZE;
+
+                // value
                 m.write_val(&mut c)?;
+                // extra (string offset)
                 c.write_u64::<Endian>(0)?;
             }
             // offset to metric block
@@ -370,82 +393,82 @@ impl Client {
             c.write_u64::<Endian>(0)?;
 
             // string block
-            let string_block_off = wi.string_sec_off
-                + i*MIN_STRINGS_PER_METRIC*STRING_BLOCK_LEN;
+            let mut string_block_off = self.wi.string_sec_off
+                + self.wi.n_strings*STRING_BLOCK_LEN;
 
             // short help
-            c.set_position(shorthelp_off_off);
-            let shorthelp_off = string_block_off;
-            c.write_u64::<Endian>(string_block_off)?;
-            c.set_position(shorthelp_off);
-            c.write_all(CString::new(m.shorthelp())?.to_bytes_with_nul())?;
+            if m.shorthelp().len() > 0 {
+                c.set_position(shorthelp_off_off);
+                c.write_u64::<Endian>(string_block_off)?;
+
+                c.set_position(string_block_off);
+                c.write_all(CString::new(m.shorthelp())?.to_bytes_with_nul())?;
+
+                self.wi.n_strings += 1;
+                string_block_off += STRING_BLOCK_LEN;
+            }
 
             // long help
-            c.set_position(longhelp_off_off);
-            let longhelp_off = shorthelp_off + STRING_BLOCK_LEN;
-            c.write_u64::<Endian>(longhelp_off)?;
-            c.set_position(longhelp_off);
-            c.write_all(CString::new(m.longhelp())?.to_bytes_with_nul())?;
+            if m.longhelp().len() > 0 {
+                c.set_position(longhelp_off_off);
+                c.write_u64::<Endian>(string_block_off)?;
 
-            // string val
+                c.set_position(string_block_off);
+                c.write_all(CString::new(m.longhelp())?.to_bytes_with_nul())?;
+
+                self.wi.n_strings += 1;
+                string_block_off += STRING_BLOCK_LEN;
+            }
+
+            // string value
             match string_val_off_off {
                 Some(off_off) => {
                     c.set_position(off_off);
-                    let string_val_off = wi.string_vals_off
-                        + string_metric_idx*STRING_BLOCK_LEN;
-                    c.write_u64::<Endian>(string_val_off)?;
-                    c.set_position(string_val_off);
+                    c.write_u64::<Endian>(string_block_off)?;
+
+                    c.set_position(string_block_off);
                     m.write_val(&mut c)?;
-                    string_metric_idx += 1;
+
+                    value_offset = string_block_off as usize;
+                    value_size = STRING_BLOCK_LEN as usize;
+
+                    self.wi.n_strings += 1;
                 },
                 None => {}
             }
+
+            // update string count in string TOC block
+            c.set_position(self.wi.n_strings_off);
+            c.write_u32::<Endian>(self.wi.n_strings as u32)?;
+
         }
 
-        Ok(())
+        { // set mmap_view for metric
+
+            let mmap_view = unsafe {
+                self.wi.mmap_view.as_mut().unwrap().clone()
+            };
+            let (_, value_mmap_view, _) =
+                three_way_split(mmap_view, value_offset, value_size)?;
+            m.set_mmap_view(value_mmap_view);
+
+        }
+
+        self.wi.metric_idx += 1;
+        Ok(self)
     }
 
-    fn unlock_mmv_header(&self, c: &mut Cursor<&mut [u8]>, wi: &MMVWriterInfo) -> io::Result<()> {
-        c.set_position(wi.gen2off);
-        c.write_i64::<Endian>(wi.gen)
-    }
+    pub fn export(&mut self) -> io::Result<()> {
+        {
+            let mmap_view = self.wi.mmap_view.as_mut().unwrap();
+            let mut cur = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
-    fn split_mmap_views(&self, mmap_view: MmapViewSync, wi: &MMVWriterInfo, metrics: &mut [&mut Metric]) -> io::Result<()> {
-        let mut right_view = mmap_view;
-        let mut left_mid_len = 0;
-
-        // split views for non-string valued metrics first because value blocks
-        // are stored before string blocks
-
-        for (i, m) in metrics.iter_mut().enumerate() {
-            if m.type_code() != STRING_METRIC_TYPE_CODE {
-                let value_block_off = (wi.value_sec_off as usize)
-                    + i*(VALUE_BLOCK_LEN as usize);
-
-                let (left_view, mid_view, r_view) =
-                    split_view(right_view, value_block_off - left_mid_len, 8)?;
-                right_view = r_view;
-                left_mid_len += left_view.len() + mid_view.len();
-
-                m.set_mmap_view(mid_view);
-            }
+            // unlock MMV header
+            cur.set_position(self.wi.gen2off);
+            cur.write_i64::<Endian>(self.wi.gen)?;
         }
-
-        for (i, m) in metrics.iter_mut()
-            .filter(|m| m.type_code() == STRING_METRIC_TYPE_CODE)
-            .enumerate() {
-                
-            let string_val_off = (wi.string_vals_off as usize)
-                + i*(STRING_BLOCK_LEN as usize);
-            
-            let (left_view, mid_view, r_view) =
-                split_view(right_view, string_val_off - left_mid_len,
-                    STRING_BLOCK_LEN as usize)?;
-            right_view = r_view;
-            left_mid_len += left_view.len() + mid_view.len();
-
-            m.set_mmap_view(mid_view);
-        }
+        
+        self.wi.mmap_view = None;
 
         Ok(())
     }
@@ -461,7 +484,7 @@ impl Client {
     }
 }
 
-fn split_view(view: MmapViewSync, mid_idx: usize, mid_len: usize) -> io::Result<(MmapViewSync, MmapViewSync, MmapViewSync)> {
+fn three_way_split(view: MmapViewSync, mid_idx: usize, mid_len: usize) -> io::Result<(MmapViewSync, MmapViewSync, MmapViewSync)> {
     let (left_view, mid_right_view) = view.split_at(mid_idx).unwrap();
     let (mid_view, right_view) = mid_right_view.split_at(mid_len).unwrap();
     Ok((left_view, mid_view, right_view))
@@ -474,8 +497,8 @@ fn test_mmv_header() {
 
     let cluster_id = thread_rng().gen::<u32>();
     let flags = PROCESS | SENTINEL;
-    let client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
-    client.export(&mut []).unwrap();
+    let mut client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
+    client.begin(0).unwrap().export().unwrap();
 
     let mut file = File::open(client.mmv_path()).unwrap();
     let mut header = Vec::new();

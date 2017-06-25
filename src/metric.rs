@@ -245,6 +245,12 @@ impl<T: MetricType + Clone> MMVMetric<T> {
     ///
     /// `item` is the unique metric ID component of the PMID. Only
     /// the least-significant 10 bits are used.
+    ///
+    /// `name` length should not exceed 63 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(
         name: &str, item: u32, sem: Semamtics,
         unit: Unit, init_val: T,
@@ -290,6 +296,12 @@ impl<T: MetricType + Clone> MMVMetric<T> {
         self.val = new_val;
         Ok(())
     }
+    
+    pub fn item(&self) -> u32 { self.item }
+    pub fn type_code(&self) -> u32 { self.val.type_code() }
+    pub fn sem(&self) -> &Semamtics { &self.sem }
+    pub fn unit(&self) -> u32 { self.unit }
+    pub fn indom(&self) -> u32 { self.indom }
 }
 
 /// Type-agnostic Metric
@@ -298,11 +310,6 @@ impl<T: MetricType + Clone> MMVMetric<T> {
 /// value types, and also implementing custom MMV writers.
 pub trait Metric {
     fn name(&self) -> &str;
-    fn item(&self) -> u32;
-    fn type_code(&self) -> u32;
-    fn sem(&self) -> &Semamtics;
-    fn unit(&self) -> u32;
-    fn indom(&self) -> u32;
     fn shorthelp(&self) -> &str;
     fn longhelp(&self) -> &str;
     fn write_val(&mut self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()>;
@@ -312,11 +319,6 @@ pub trait Metric {
 
 impl<T: MetricType> Metric for MMVMetric<T> {
     fn name(&self) -> &str { &self.name }
-    fn item(&self) -> u32 { self.item }
-    fn type_code(&self) -> u32 { self.val.type_code() }
-    fn sem(&self) -> &Semamtics { &self.sem }
-    fn unit(&self) -> u32 { self.unit }
-    fn indom(&self) -> u32 { self.indom }
     fn shorthelp(&self) -> &str { &self.shorthelp }
     fn longhelp(&self) -> &str { &self.longhelp }
 
@@ -402,17 +404,21 @@ fn test_invalid_metric_strings() {
         &invalid_longhelp,
     );
     assert!(m3.is_err());
-
 }
 
 #[test]
-fn test_numeric_metrics() {
+fn test_random_numeric_metrics() {
     use byteorder::ReadBytesExt;
     use rand::{thread_rng, Rng};
     use super::client::Client;
 
-    let mut mmv_metrics = Vec::new();
+    let mut metrics = Vec::new();
+    let mut new_vals = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
+
+    let mut client = Client::new("numeric_metrics").unwrap();
+    client.begin(n_metrics as u64).unwrap();
+    
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
             .take(super::METRIC_NAME_MAX_LEN as usize - 1).collect();
@@ -441,82 +447,102 @@ fn test_numeric_metrics() {
         let rnd_val2 = thread_rng().gen::<u32>();
         assert!(metric.set_val(rnd_val2).is_ok());
         assert_eq!(metric.val(), rnd_val2);
-        
-        mmv_metrics.push(metric);
+
+        client.register_metric(&mut metric).unwrap();
+
+        metrics.push(metric);
+        new_vals.push(thread_rng().gen::<u32>());
     }
 
-    {
-        let mut metrics: Vec<&mut Metric> =
-            mmv_metrics.iter_mut().map(|m| m as &mut Metric).collect();
-        let client = Client::new("numeric metrics").unwrap();
-        client.export(&mut metrics).unwrap();
+    client.export().unwrap();
+
+    for (m, v) in metrics.iter_mut().zip(&mut new_vals) {
+        assert!(m.set_val(*v).is_ok());
     }
 
-    for m in mmv_metrics.iter_mut() {
-        let rnd_val = thread_rng().gen::<u32>();
-        assert!(m.set_val(rnd_val).is_ok());
-
+    for (m, v) in metrics.iter_mut().zip(new_vals) {
         let mut slice = unsafe { m.mmap_view.as_slice() };
-        assert_eq!(m.val(), slice.read_u64::<super::Endian>().unwrap() as u32);
+        assert_eq!(v, slice.read_u64::<super::Endian>().unwrap() as u32);
     }
 }
 
 #[test]
-fn test_string_metrics() {
+fn test_simple_metrics() {
+    use byteorder::ReadBytesExt;
     use rand::{thread_rng, Rng};
     use std::ffi::CStr;
+    use std::mem::transmute;
     use super::client::Client;
 
-    let mut mmv_metrics = Vec::new();
-    let n_metrics = thread_rng().gen::<u8>() % 20;
-    for _ in 1..n_metrics {
-        let rnd_name: String = thread_rng().gen_ascii_chars()
-            .take(super::METRIC_NAME_MAX_LEN as usize - 1).collect();
+    // f64 metric
+    let mut hz = Unit::time(TimeScale::Sec);
+    hz.time_dim = -1;
+    let mut freq = MMVMetric::new(
+        "frequency",
+        0,
+        Semamtics::Instant,
+        hz,
+        thread_rng().gen::<f64>(),
+        "", "",
+    ).unwrap();
 
-        let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+    // string metric
+    let mut color = MMVMetric::new(
+        "color",
+        0,
+        Semamtics::Discrete,
+        Unit::empty(),
+        String::from("cyan"),
+        "Color", "",
+    ).unwrap();
 
-        let rnd_longhelp: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+    // u32 metric
+    let mut photons = MMVMetric::new(
+        "photons",
+        0,
+        Semamtics::Counter,
+        Unit::count(),
+        thread_rng().gen::<u32>(),
+        "No. of photons",
+        "Number of photons emitted by source",
+    ).unwrap();
 
-        let rnd_item = thread_rng().gen::<u32>();
-        let rnd_val1: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+    let mut client = Client::new("physical_metrics").unwrap();
+    client.begin(3).unwrap();
+    client.register_metric(&mut freq).unwrap();
+    client.register_metric(&mut color).unwrap();
+    client.register_metric(&mut photons).unwrap();
+    client.export().unwrap();
 
-        let mut metric = MMVMetric::new(
-            &rnd_name,
-            rnd_item,
-            Semamtics::Counter,
-            Unit::count(),
-            rnd_val1.clone(),
-            &rnd_shorthelp,
-            &rnd_longhelp,
-        ).unwrap();
+    let new_freq = thread_rng().gen::<f64>();
+    assert!(freq.set_val(new_freq).is_ok());
 
-        assert_eq!(metric.val(), rnd_val1);
+    let new_color = String::from("magenta");
+    assert!(color.set_val(new_color.clone()).is_ok());
 
-        let rnd_val2: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
-        assert!(metric.set_val(rnd_val2.clone()).is_ok());
-        assert_eq!(metric.val(), rnd_val2);
-        
-        mmv_metrics.push(metric);
-    }
+    let new_photon_count = thread_rng().gen::<u32>();
+    assert!(photons.set_val(new_photon_count).is_ok());
 
-    {
-        let mut metrics: Vec<&mut Metric> =
-            mmv_metrics.iter_mut().map(|m| m as &mut Metric).collect();
-        let client = Client::new("string metrics").unwrap();
-        client.export(&mut metrics).unwrap();
-    }
+    let mut freq_slice = unsafe { freq.mmap_view.as_slice() };
+    assert_eq!(
+        new_freq,
+        unsafe { 
+            transmute::<u64, f64>(freq_slice.read_u64::<super::Endian>().unwrap())
+        }
+    );
 
-    for m in mmv_metrics.iter_mut() {
-        let rnd_val: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
-        assert!(m.set_val(rnd_val.clone()).is_ok());
+    let color_slice = unsafe { color.mmap_view.as_slice() };
+    let cstr = unsafe {
+        CStr::from_ptr(color_slice.as_ptr() as *const i8)
+    };
+    assert_eq!(new_color, cstr.to_str().unwrap());
 
-        let slice = unsafe { m.mmap_view.as_slice() };
-        let cstr = CStr::from_bytes_with_nul(slice).unwrap();
-        assert_eq!(m.val(), cstr.to_str().unwrap());
-    }
+    let mut photon_slice = unsafe { photons.mmap_view.as_slice() };
+    assert_eq!(
+        new_photon_count,
+        photon_slice.read_u64::<super::Endian>().unwrap() as u32
+    );
+
+    // TODO: after implementing mmvdump functionality, test the
+    // bytes of the entier MMV file
 }
