@@ -31,6 +31,7 @@ const METRIC_BLOCK_LEN: u64 = 104;
 const VALUE_BLOCK_LEN: u64 = 32;
 const STRING_BLOCK_LEN: u64 = 256;
 const METRIC_NAME_MAX_LEN: u64 = 64;
+const MIN_STRINGS_PER_METRIC: u64 = 2;
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -217,7 +218,7 @@ impl Client {
     pub fn export(&self, mut metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
         let mut wi = MMVWriterInfo::new();
         wi.n_metrics = metrics.len() as u64;
-        wi.n_strings = wi.n_metrics*2
+        wi.n_strings = wi.n_metrics*MIN_STRINGS_PER_METRIC
             + metrics.iter()
                 .filter(|m| m.type_code() == metric::STRING_METRIC_TYPE_CODE)
                 .count() as u64;
@@ -236,6 +237,26 @@ impl Client {
 
         let mut mmv_view = unsafe { mmap_view.clone() };
         let mut c = Cursor::new(unsafe { mmv_view.as_mut_slice() });
+
+        /*
+            The layout of the MMV is as follows:
+            --- MMV Header
+            --- Metrics TOC Block
+            --- Values TOC Block
+            --- Strings TOC Block
+            --- Metrics Block
+            --- Values Block
+            --- Strings Block
+                --- Help text (short and long) block
+                --- String values block
+            
+            After writing, every metric is given ownership
+            of the respective memory-mapped slice that contains
+            the metric's value. This is to ensure that the metric
+            is *only* able to write to it's value slice when updating
+            it's value.
+        */
+
         self.write_mmv_header(&mut c, &mut wi)?;
         self.write_metric_toc_block(&mut c, &mut wi)?;
         self.write_values_toc_block(&mut c, &mut wi)?;
@@ -259,7 +280,7 @@ impl Client {
         wi.gen2off = cursor.position();
         cursor.write_i64::<Endian>(0)?;
         // no. of toc blocks
-        cursor.write_i32::<Endian>(2)?;
+        cursor.write_i32::<Endian>(3)?;
         // flags
         cursor.write_u32::<Endian>(self.flags.bits())?;
         // pid
@@ -357,7 +378,7 @@ impl Client {
 
             // string block
             let string_block_off = wi.string_sec_off
-                + i*2*STRING_BLOCK_LEN;
+                + i*MIN_STRINGS_PER_METRIC*STRING_BLOCK_LEN;
 
             // short help
             c.set_position(shorthelp_off_off);
