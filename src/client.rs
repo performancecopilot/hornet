@@ -11,7 +11,6 @@ use std::io::{BufReader, Cursor};
 use std::io::prelude::*;
 use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::str;
-use super::metric::MMVMetric;
 use time;
 
 use super::{
@@ -25,7 +24,7 @@ use super::{
     METRIC_NAME_MAX_LEN,
     MIN_STRINGS_PER_METRIC
 };
-use super::metric::STRING_METRIC_TYPE_CODE;
+use super::metric::{Metric, STRING_METRIC_TYPE_CODE};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -209,7 +208,7 @@ impl Client {
     }
     
     /// Exports metrics by writing to an MMV file
-    pub fn export(&self, mut metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
+    pub fn export(&self, mut metrics: &mut [&mut Metric]) -> io::Result<()> {
         let mut wi = MMVWriterInfo::new();
         wi.n_metrics = metrics.len() as u64;
         wi.n_strings = wi.n_metrics*MIN_STRINGS_PER_METRIC
@@ -321,7 +320,7 @@ impl Client {
     }
 
     fn write_metrics(&self, mut c: &mut Cursor<&mut [u8]>, wi: &mut MMVWriterInfo,
-        metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
+        metrics: &mut [&mut Metric]) -> io::Result<()> {
 
         let mut string_metric_idx = 0;
 
@@ -411,7 +410,7 @@ impl Client {
         c.write_i64::<Endian>(wi.gen)
     }
 
-    fn split_mmap_views(&self, mmap_view: MmapViewSync, wi: &MMVWriterInfo, metrics: &mut [&mut MMVMetric]) -> io::Result<()> {
+    fn split_mmap_views(&self, mmap_view: MmapViewSync, wi: &MMVWriterInfo, metrics: &mut [&mut Metric]) -> io::Result<()> {
         let mut right_view = mmap_view;
         let mut left_mid_len = 0;
 

@@ -217,8 +217,8 @@ pub enum Semamtics {
     Discrete = 4
 }
 
-/// Singleton metric
-pub struct Metric<T> {
+/// MMV metric
+pub struct MMVMetric<T> {
     name: String,
     item: u32,
     sem: Semamtics,
@@ -237,9 +237,8 @@ lazy_static! {
     };
 }
 
-impl<T: MetricType + Clone> Metric<T> {
-    /// Creates a new Metric with necessary attributes for a
-    /// PCP MMV metric.
+impl<T: MetricType + Clone> MMVMetric<T> {
+    /// Creates a new PCP MMV Metric.
     ///
     /// The value type for the metric is determined and fixed
     /// at compile time.
@@ -261,7 +260,7 @@ impl<T: MetricType + Clone> Metric<T> {
             return Err(format!("long help text longer than {} bytes", super::STRING_BLOCK_LEN - 1));
         }
 
-        Ok(Metric {
+        Ok(MMVMetric {
             name: name.to_owned(),
             item: item & ((1 << ITEM_BIT_LEN) - 1),
             sem: sem,
@@ -293,11 +292,11 @@ impl<T: MetricType + Clone> Metric<T> {
     }
 }
 
-/// PCP MMV Metric
+/// Type-agnostic Metric
 ///
-/// Useful for dealing with collections of Metrics with different
+/// Useful for dealing with collections of MMVMetrics with different
 /// value types, and also implementing custom MMV writers.
-pub trait MMVMetric {
+pub trait Metric {
     fn name(&self) -> &str;
     fn item(&self) -> u32;
     fn type_code(&self) -> u32;
@@ -311,7 +310,7 @@ pub trait MMVMetric {
     fn set_mmap_view(&mut self, mmap_view: MmapViewSync);
 }
 
-impl<T: MetricType> MMVMetric for Metric<T> {
+impl<T: MetricType> Metric for MMVMetric<T> {
     fn name(&self) -> &str { &self.name }
     fn item(&self) -> u32 { self.item }
     fn type_code(&self) -> u32 { self.val.type_code() }
@@ -381,7 +380,7 @@ fn test_invalid_metric_strings() {
 
     let invalid_name: String = thread_rng().gen_ascii_chars()
         .take(super::METRIC_NAME_MAX_LEN as usize).collect();
-    let m1 = Metric::new(
+    let m1 = MMVMetric::new(
         &invalid_name,
         0, Semamtics::Counter, Unit::count(), 0, "", "",
     );
@@ -389,7 +388,7 @@ fn test_invalid_metric_strings() {
 
     let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
-    let m2 = Metric::new(
+    let m2 = MMVMetric::new(
         "", 0, Semamtics::Counter, Unit::count(), 0,
         &invalid_shorthelp,
         "",
@@ -398,7 +397,7 @@ fn test_invalid_metric_strings() {
 
     let invalid_longhelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
-    let m3 = Metric::new(
+    let m3 = MMVMetric::new(
         "", 0, Semamtics::Counter, Unit::count(), 0, "",
         &invalid_longhelp,
     );
@@ -412,7 +411,7 @@ fn test_numeric_metrics() {
     use rand::{thread_rng, Rng};
     use super::client::Client;
 
-    let mut metrics = Vec::new();
+    let mut mmv_metrics = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
@@ -427,7 +426,7 @@ fn test_numeric_metrics() {
         let rnd_item = thread_rng().gen::<u32>();
         let rnd_val1 = thread_rng().gen::<u32>();
 
-        let mut metric = Metric::new(
+        let mut metric = MMVMetric::new(
             &rnd_name,
             rnd_item,
             Semamtics::Counter,
@@ -443,17 +442,17 @@ fn test_numeric_metrics() {
         assert!(metric.set_val(rnd_val2).is_ok());
         assert_eq!(metric.val(), rnd_val2);
         
-        metrics.push(metric);
+        mmv_metrics.push(metric);
     }
 
     {
-        let mut mmv_metrics: Vec<&mut MMVMetric> =
-            metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
-        let client = Client::new("metrics").unwrap();
-        client.export(&mut mmv_metrics).unwrap();
+        let mut metrics: Vec<&mut Metric> =
+            mmv_metrics.iter_mut().map(|m| m as &mut Metric).collect();
+        let client = Client::new("numeric metrics").unwrap();
+        client.export(&mut metrics).unwrap();
     }
 
-    for m in metrics.iter_mut() {
+    for m in mmv_metrics.iter_mut() {
         let rnd_val = thread_rng().gen::<u32>();
         assert!(m.set_val(rnd_val).is_ok());
 
@@ -468,7 +467,7 @@ fn test_string_metrics() {
     use std::ffi::CStr;
     use super::client::Client;
 
-    let mut metrics = Vec::new();
+    let mut mmv_metrics = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
@@ -484,7 +483,7 @@ fn test_string_metrics() {
         let rnd_val1: String = thread_rng().gen_ascii_chars()
             .take(super::STRING_BLOCK_LEN as usize - 1).collect();
 
-        let mut metric = Metric::new(
+        let mut metric = MMVMetric::new(
             &rnd_name,
             rnd_item,
             Semamtics::Counter,
@@ -501,17 +500,17 @@ fn test_string_metrics() {
         assert!(metric.set_val(rnd_val2.clone()).is_ok());
         assert_eq!(metric.val(), rnd_val2);
         
-        metrics.push(metric);
+        mmv_metrics.push(metric);
     }
 
     {
-        let mut mmv_metrics: Vec<&mut MMVMetric> =
-            metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
-        let client = Client::new("metrics").unwrap();
-        client.export(&mut mmv_metrics).unwrap();
+        let mut metrics: Vec<&mut Metric> =
+            mmv_metrics.iter_mut().map(|m| m as &mut Metric).collect();
+        let client = Client::new("string metrics").unwrap();
+        client.export(&mut metrics).unwrap();
     }
 
-    for m in metrics.iter_mut() {
+    for m in mmv_metrics.iter_mut() {
         let rnd_val: String = thread_rng().gen_ascii_chars()
             .take(super::STRING_BLOCK_LEN as usize - 1).collect();
         assert!(m.set_val(rnd_val.clone()).is_ok());
