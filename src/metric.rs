@@ -38,7 +38,6 @@ macro_rules! impl_metric_type_for (
 
             fn write_to_writer<W: WriteBytesExt>(&self, mut w: &mut W)
             -> io::Result<()> {
-
                 w.write_u64::<super::Endian>(
                     unsafe {
                         mem::transmute::<$typ, $base_typ>(*self) as u64
@@ -377,35 +376,146 @@ fn test_units() {
 }
 
 #[test]
-fn test_metric() {
-    let mut hello_metric = Metric::new(
-        "hello", 1,
-        Semamtics::Counter,
-        Unit::empty(),
-        "Hello".to_owned(),
-        "Hello metric",
-        "Metric of value type string").unwrap();
+fn test_invalid_metric_strings() {
+    use rand::{thread_rng, Rng};
 
-    let mut pi_metric = Metric::new(
-        "pi", 1,
-        Semamtics::Instant,
-        Unit::time(TimeScale::Sec),
-        3.0,
-        "Pi metric",
-        "Metric of value type double").unwrap();
+    let invalid_name: String = thread_rng().gen_ascii_chars()
+        .take(super::METRIC_NAME_MAX_LEN as usize).collect();
+    let m1 = Metric::new(
+        &invalid_name,
+        0, Semamtics::Counter, Unit::count(), 0, "", "",
+    );
+    assert!(m1.is_err());
 
-    hello_metric.set_val("".to_owned()).unwrap();
-    assert_eq!(&hello_metric.val(), "");
+    let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
+        .take(super::STRING_BLOCK_LEN as usize).collect();
+    let m2 = Metric::new(
+        "", 0, Semamtics::Counter, Unit::count(), 0,
+        &invalid_shorthelp,
+        "",
+    );
+    assert!(m2.is_err());
 
-    pi_metric.set_val(0.0).unwrap();
-    assert_eq!(pi_metric.val(), 0.0);
+    let invalid_longhelp: String = thread_rng().gen_ascii_chars()
+        .take(super::STRING_BLOCK_LEN as usize).collect();
+    let m3 = Metric::new(
+        "", 0, Semamtics::Counter, Unit::count(), 0, "",
+        &invalid_longhelp,
+    );
+    assert!(m3.is_err());
 
-    let client = super::Client::new("metrics").unwrap();
-    client.export(&mut [&mut hello_metric, &mut pi_metric]).unwrap();
+}
 
-    hello_metric.set_val("Hello World".to_owned()).unwrap();
-    assert_eq!(&hello_metric.val(), "Hello World");
+#[test]
+fn test_numeric_metrics() {
+    use rand::{thread_rng, Rng};
+    use byteorder::ReadBytesExt;
 
-    pi_metric.set_val(3.14).unwrap();
-    assert_eq!(pi_metric.val(), 3.14);
+    let mut metrics = Vec::new();
+    let n_metrics = thread_rng().gen::<u8>() % 20;
+    for _ in 1..n_metrics {
+        let rnd_name: String = thread_rng().gen_ascii_chars()
+            .take(super::METRIC_NAME_MAX_LEN as usize - 1).collect();
+
+        let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+
+        let rnd_longhelp: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+
+        let rnd_item = thread_rng().gen::<u32>();
+        let rnd_val1 = thread_rng().gen::<u32>();
+
+        let mut metric = Metric::new(
+            &rnd_name,
+            rnd_item,
+            Semamtics::Counter,
+            Unit::count(),
+            rnd_val1,
+            &rnd_shorthelp,
+            &rnd_longhelp,
+        ).unwrap();
+
+        assert_eq!(metric.val(), rnd_val1);
+
+        let rnd_val2 = thread_rng().gen::<u32>();
+        assert!(metric.set_val(rnd_val2).is_ok());
+        assert_eq!(metric.val(), rnd_val2);
+        
+        metrics.push(metric);
+    }
+
+    {
+        let mut mmv_metrics: Vec<&mut MMVMetric> =
+            metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
+        let client = super::Client::new("metrics").unwrap();
+        client.export(&mut mmv_metrics).unwrap();
+    }
+
+    for m in metrics.iter_mut() {
+        let rnd_val = thread_rng().gen::<u32>();
+        assert!(m.set_val(rnd_val).is_ok());
+
+        let mut slice = unsafe { m.mmap_view.as_slice() };
+        assert_eq!(m.val(), slice.read_u64::<super::Endian>().unwrap() as u32);
+    }
+}
+
+#[test]
+fn test_string_metrics() {
+    use rand::{thread_rng, Rng};
+    use std::ffi::CStr;
+
+    let mut metrics = Vec::new();
+    let n_metrics = thread_rng().gen::<u8>() % 20;
+    for _ in 1..n_metrics {
+        let rnd_name: String = thread_rng().gen_ascii_chars()
+            .take(super::METRIC_NAME_MAX_LEN as usize - 1).collect();
+
+        let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+
+        let rnd_longhelp: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+
+        let rnd_item = thread_rng().gen::<u32>();
+        let rnd_val1: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+
+        let mut metric = Metric::new(
+            &rnd_name,
+            rnd_item,
+            Semamtics::Counter,
+            Unit::count(),
+            rnd_val1.clone(),
+            &rnd_shorthelp,
+            &rnd_longhelp,
+        ).unwrap();
+
+        assert_eq!(metric.val(), rnd_val1);
+
+        let rnd_val2: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+        assert!(metric.set_val(rnd_val2.clone()).is_ok());
+        assert_eq!(metric.val(), rnd_val2);
+        
+        metrics.push(metric);
+    }
+
+    {
+        let mut mmv_metrics: Vec<&mut MMVMetric> =
+            metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
+        let client = super::Client::new("metrics").unwrap();
+        client.export(&mut mmv_metrics).unwrap();
+    }
+
+    for m in metrics.iter_mut() {
+        let rnd_val: String = thread_rng().gen_ascii_chars()
+            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+        assert!(m.set_val(rnd_val.clone()).is_ok());
+
+        let slice = unsafe { m.mmap_view.as_slice() };
+        let cstr = CStr::from_bytes_with_nul(slice).unwrap();
+        assert_eq!(m.val(), cstr.to_str().unwrap());
+    }
 }
