@@ -408,8 +408,9 @@ fn test_invalid_metric_strings() {
 
 #[test]
 fn test_numeric_metrics() {
-    use rand::{thread_rng, Rng};
     use byteorder::ReadBytesExt;
+    use rand::{thread_rng, Rng};
+    use super::client::Client;
 
     let mut metrics = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
@@ -448,7 +449,7 @@ fn test_numeric_metrics() {
     {
         let mut mmv_metrics: Vec<&mut MMVMetric> =
             metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
-        let client = super::Client::new("metrics").unwrap();
+        let client = Client::new("metrics").unwrap();
         client.export(&mut mmv_metrics).unwrap();
     }
 
@@ -465,6 +466,7 @@ fn test_numeric_metrics() {
 fn test_string_metrics() {
     use rand::{thread_rng, Rng};
     use std::ffi::CStr;
+    use super::client::Client;
 
     let mut metrics = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
@@ -505,7 +507,7 @@ fn test_string_metrics() {
     {
         let mut mmv_metrics: Vec<&mut MMVMetric> =
             metrics.iter_mut().map(|m| m as &mut MMVMetric).collect();
-        let client = super::Client::new("metrics").unwrap();
+        let client = Client::new("metrics").unwrap();
         client.export(&mut mmv_metrics).unwrap();
     }
 
