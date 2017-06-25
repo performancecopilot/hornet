@@ -208,7 +208,7 @@ impl Unit {
 
 #[derive(Copy, Clone)]
 /// Semantic for a Metric
-pub enum Semamtics {
+pub enum Semantics {
     /// Counter
     Counter  = 1,
     /// Instant
@@ -217,11 +217,11 @@ pub enum Semamtics {
     Discrete = 4
 }
 
-/// MMV metric
-pub struct MMVMetric<T> {
+/// Singleton metric
+pub struct Metric<T> {
     name: String,
     item: u32,
-    sem: Semamtics,
+    sem: Semantics,
     indom: u32,
     unit: u32,
     shorthelp: String,
@@ -237,7 +237,7 @@ lazy_static! {
     };
 }
 
-impl<T: MetricType + Clone> MMVMetric<T> {
+impl<T: MetricType + Clone> Metric<T> {
     /// Creates a new PCP MMV Metric.
     ///
     /// The value type for the metric is determined and fixed
@@ -252,7 +252,7 @@ impl<T: MetricType + Clone> MMVMetric<T> {
     ///
     /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(
-        name: &str, item: u32, sem: Semamtics,
+        name: &str, item: u32, sem: Semantics,
         unit: Unit, init_val: T,
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
@@ -266,7 +266,7 @@ impl<T: MetricType + Clone> MMVMetric<T> {
             return Err(format!("long help text longer than {} bytes", super::STRING_BLOCK_LEN - 1));
         }
 
-        Ok(MMVMetric {
+        Ok(Metric {
             name: name.to_owned(),
             item: item & ((1 << ITEM_BIT_LEN) - 1),
             sem: sem,
@@ -282,7 +282,7 @@ impl<T: MetricType + Clone> MMVMetric<T> {
     /// Returns the current value of the metric
     pub fn val(&self) -> T {
         self.val.clone()
-    }
+    }    
 
     /// Sets the current value of the metric.
     ///
@@ -297,41 +297,21 @@ impl<T: MetricType + Clone> MMVMetric<T> {
         Ok(())
     }
     
+    pub fn name(&self) -> &str { &self.name }
     pub fn item(&self) -> u32 { self.item }
     pub fn type_code(&self) -> u32 { self.val.type_code() }
-    pub fn sem(&self) -> &Semamtics { &self.sem }
+    pub fn sem(&self) -> &Semantics { &self.sem }
     pub fn unit(&self) -> u32 { self.unit }
     pub fn indom(&self) -> u32 { self.indom }
-}
+    pub fn shorthelp(&self) -> &str { &self.shorthelp }
+    pub fn longhelp(&self) -> &str { &self.longhelp }
 
-/// Type-agnostic Metric
-///
-/// Useful for dealing with collections of MMVMetrics with different
-/// value types, and also implementing custom MMV writers.
-pub trait Metric {
-    fn name(&self) -> &str;
-    fn shorthelp(&self) -> &str;
-    fn longhelp(&self) -> &str;
-    fn write_val(&mut self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()>;
-    unsafe fn mmap_view(&mut self) -> MmapViewSync;
-    fn set_mmap_view(&mut self, mmap_view: MmapViewSync);
-}
-
-impl<T: MetricType> Metric for MMVMetric<T> {
-    fn name(&self) -> &str { &self.name }
-    fn shorthelp(&self) -> &str { &self.shorthelp }
-    fn longhelp(&self) -> &str { &self.longhelp }
-
-    fn write_val(&mut self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()> {
-        self.val.write_to_writer(cursor)
-    }
-
-    unsafe fn mmap_view(&mut self) -> MmapViewSync {
-        self.mmap_view.clone()
-    }
-
-    fn set_mmap_view(&mut self, mmap_view: MmapViewSync) {
+    pub (super) fn set_mmap_view(&mut self, mmap_view: MmapViewSync) {
         self.mmap_view = mmap_view;
+    }
+
+    pub (super) fn write_val(&mut self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+        self.val.write_to_writer(cursor)
     }
 }
 
@@ -382,16 +362,16 @@ fn test_invalid_metric_strings() {
 
     let invalid_name: String = thread_rng().gen_ascii_chars()
         .take(super::METRIC_NAME_MAX_LEN as usize).collect();
-    let m1 = MMVMetric::new(
+    let m1 = Metric::new(
         &invalid_name,
-        0, Semamtics::Counter, Unit::count(), 0, "", "",
+        0, Semantics::Counter, Unit::count(), 0, "", "",
     );
     assert!(m1.is_err());
 
     let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
-    let m2 = MMVMetric::new(
-        "", 0, Semamtics::Counter, Unit::count(), 0,
+    let m2 = Metric::new(
+        "", 0, Semantics::Counter, Unit::count(), 0,
         &invalid_shorthelp,
         "",
     );
@@ -399,8 +379,8 @@ fn test_invalid_metric_strings() {
 
     let invalid_longhelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
-    let m3 = MMVMetric::new(
-        "", 0, Semamtics::Counter, Unit::count(), 0, "",
+    let m3 = Metric::new(
+        "", 0, Semantics::Counter, Unit::count(), 0, "",
         &invalid_longhelp,
     );
     assert!(m3.is_err());
@@ -410,7 +390,7 @@ fn test_invalid_metric_strings() {
 fn test_random_numeric_metrics() {
     use byteorder::ReadBytesExt;
     use rand::{thread_rng, Rng};
-    use super::client::Client;
+    use super::Client;
 
     let mut metrics = Vec::new();
     let mut new_vals = Vec::new();
@@ -432,10 +412,10 @@ fn test_random_numeric_metrics() {
         let rnd_item = thread_rng().gen::<u32>();
         let rnd_val1 = thread_rng().gen::<u32>();
 
-        let mut metric = MMVMetric::new(
+        let mut metric = Metric::new(
             &rnd_name,
             rnd_item,
-            Semamtics::Counter,
+            Semantics::Counter,
             Unit::count(),
             rnd_val1,
             &rnd_shorthelp,
@@ -472,47 +452,47 @@ fn test_simple_metrics() {
     use rand::{thread_rng, Rng};
     use std::ffi::CStr;
     use std::mem::transmute;
-    use super::client::Client;
+    use super::Client;
 
     // f64 metric
     let mut hz = Unit::time(TimeScale::Sec);
     hz.time_dim = -1;
-    let mut freq = MMVMetric::new(
+    let mut freq = Metric::new(
         "frequency",
         0,
-        Semamtics::Instant,
+        Semantics::Instant,
         hz,
         thread_rng().gen::<f64>(),
         "", "",
     ).unwrap();
 
     // string metric
-    let mut color = MMVMetric::new(
+    let mut color = Metric::new(
         "color",
         0,
-        Semamtics::Discrete,
+        Semantics::Discrete,
         Unit::empty(),
         String::from("cyan"),
         "Color", "",
     ).unwrap();
 
     // u32 metric
-    let mut photons = MMVMetric::new(
+    let mut photons = Metric::new(
         "photons",
         0,
-        Semamtics::Counter,
+        Semantics::Counter,
         Unit::count(),
         thread_rng().gen::<u32>(),
         "No. of photons",
         "Number of photons emitted by source",
     ).unwrap();
 
-    let mut client = Client::new("physical_metrics").unwrap();
-    client.begin(3).unwrap();
-    client.register_metric(&mut freq).unwrap();
-    client.register_metric(&mut color).unwrap();
-    client.register_metric(&mut photons).unwrap();
-    client.export().unwrap();
+    Client::new("physical_metrics").unwrap()
+        .begin(3).unwrap()
+        .register_metric(&mut freq).unwrap()
+        .register_metric(&mut color).unwrap()
+        .register_metric(&mut photons).unwrap()
+        .export().unwrap();
 
     let new_freq = thread_rng().gen::<f64>();
     assert!(freq.set_val(new_freq).is_ok());

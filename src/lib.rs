@@ -22,7 +22,3 @@ const TOC_BLOCK_COUNT: u64 = 3;
 type Endian = byteorder::LittleEndian;
 
 pub mod client;
-pub mod metric;
-
-pub use client::Client;
-pub use metric::MMVMetric;

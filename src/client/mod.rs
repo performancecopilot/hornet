@@ -1,4 +1,3 @@
-
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use regex::bytes::Regex;
@@ -26,7 +25,9 @@ use super::{
     MAX_STRINGS_PER_METRIC,
     TOC_BLOCK_COUNT
 };
-use super::metric::{Metric, MetricType, MMVMetric, STRING_METRIC_TYPE_CODE};
+
+pub mod metric;
+use self::metric::{Metric, MetricType, STRING_METRIC_TYPE_CODE};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -329,7 +330,7 @@ impl Client {
         c.write_u64::<Endian>(self.wi.string_sec_off)
     }
 
-    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut MMVMetric<T>) -> io::Result<&mut Client> {
+    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>) -> io::Result<&mut Client> {
 
         // TODO: return custom error instead of panicing
         assert!(self.wi.metric_idx < self.wi.n_metrics);
