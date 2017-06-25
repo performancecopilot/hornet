@@ -1,7 +1,6 @@
 
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
-use nix;
 use regex::bytes::Regex;
 use std::env;
 use std::ffi::{CString, OsStr, OsString};
@@ -33,11 +32,13 @@ static MMV_DIR_SUFFIX: &'static str = "mmv";
 
 #[cfg(unix)]
 fn get_process_id() -> i32 {
+    use nix;
     nix::unistd::getpid()
 }
 
 #[cfg(windows)]
 fn get_process_id() -> i32 {
+    use kernel32;
     unsafe { kernel32::GetCurrentProcessId() as i32 }
 }
 
