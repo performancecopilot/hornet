@@ -4,38 +4,37 @@ extern crate rand;
 use hornet::client::Client;
 use hornet::client::metric::*;
 use rand::{thread_rng, Rng};
+use std::thread;
+use std::time::Duration;
 
 fn main() {
     
     /* create three singleton metrics */
 
-    let hz = Unit::new().time(Time::Sec, -1).unwrap();
-    let mut freq = Metric::new(
-        "frequency", // name
-        0, // item ID
-        Semantics::Instant, // semantics
-        hz, // unit
-        thread_rng().gen::<f64>(), // initial value
-        "", // optional short description (max 255 bytes)
-        "", // optional long description (max 255 bytes)
-    ).unwrap();
-
     let mut color = Metric::new(
         "color",
-        0,
+        String::from("cyan"),
         Semantics::Discrete,
         Unit::new(),
-        String::from("cyan"),
         "Color",
         "",
     ).unwrap();
 
+    let hz = Unit::new().time(Time::Sec, -1).unwrap();
+    let mut freq = Metric::new(
+        "frequency", // name (max 63 bytes)
+        thread_rng().gen::<f64>(), // initial value
+        Semantics::Instant, // semantics
+        hz, // unit
+        "", // optional short description (max 255 bytes)
+        "", // optional long description (max 255 bytes)
+    ).unwrap();
+
     let mut photons = Metric::new(
         "photons",
-        0,
+        thread_rng().gen::<u32>(),
         Semantics::Counter,
         Unit::new().count(Count::One, 1).unwrap(),
-        thread_rng().gen::<u32>(),
         "No. of photons",
         "Number of photons emitted by source",
     ).unwrap();
@@ -51,10 +50,13 @@ fn main() {
 
     /* update metric values */
 
-    freq.set_val(thread_rng().gen::<f64>()).unwrap();
-
     color.set_val(String::from("magenta")).unwrap();
 
-    photons.set_val(thread_rng().gen::<u32>()).unwrap();
+    loop {
+        freq.set_val(thread_rng().gen::<f64>()).unwrap();
+        photons.set_val(thread_rng().gen::<u32>()).unwrap();
+
+        thread::sleep(Duration::from_secs(1));
+    }
 
 }

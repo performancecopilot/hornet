@@ -1,5 +1,7 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::Hasher;
 use std::io;
 use std::io::{Cursor, Write};
 use std::mem;
@@ -217,17 +219,13 @@ impl<T: MetricType + Clone> Metric<T> {
     /// The value type for the metric is determined and fixed
     /// at compile time.
     ///
-    /// `item` is the unique metric ID component of the PMID. Only
-    /// the least-significant 10 bits are used.
-    ///
     /// `name` length should not exceed 63 bytes
     ///
     /// `shorthelp_text` length should not exceed 255 bytes
     ///
     /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(
-        name: &str, item: u32, sem: Semantics,
-        unit: Unit, init_val: T,
+        name: &str, init_val: T, sem: Semantics, unit: Unit, 
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
         if name.len() >= super::METRIC_NAME_MAX_LEN as usize {
@@ -240,9 +238,13 @@ impl<T: MetricType + Clone> Metric<T> {
             return Err(format!("long help text longer than {} bytes", super::STRING_BLOCK_LEN - 1));
         }
 
+        let mut hasher = DefaultHasher::new();
+        hasher.write(name.as_bytes());
+        let item = (hasher.finish() as u32) & ((1 << ITEM_BIT_LEN) - 1);
+
         Ok(Metric {
             name: name.to_owned(),
-            item: item & ((1 << ITEM_BIT_LEN) - 1),
+            item: item,
             sem: sem,
             indom: 0,
             unit: unit.pmapi_repr,
@@ -333,14 +335,14 @@ fn test_invalid_metric_strings() {
         .take(super::METRIC_NAME_MAX_LEN as usize).collect();
     let m1 = Metric::new(
         &invalid_name,
-        0, Semantics::Discrete, Unit::new(), 0, "", "",
+        0, Semantics::Discrete, Unit::new(), "", "",
     );
     assert!(m1.is_err());
 
     let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
     let m2 = Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(), 0,
+        "", 0, Semantics::Discrete, Unit::new(),
         &invalid_shorthelp,
         "",
     );
@@ -349,7 +351,7 @@ fn test_invalid_metric_strings() {
     let invalid_longhelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
     let m3 = Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(), 0, "",
+        "", 0, Semantics::Discrete, Unit::new(), "",
         &invalid_longhelp,
     );
     assert!(m3.is_err());
@@ -378,15 +380,13 @@ fn test_random_numeric_metrics() {
         let rnd_longhelp: String = thread_rng().gen_ascii_chars()
             .take(super::STRING_BLOCK_LEN as usize - 1).collect();
 
-        let rnd_item = thread_rng().gen::<u32>();
         let rnd_val1 = thread_rng().gen::<u32>();
 
         let mut metric = Metric::new(
             &rnd_name,
-            rnd_item,
+            rnd_val1,
             Semantics::Discrete,
             Unit::new(),
-            rnd_val1,
             &rnd_shorthelp,
             &rnd_longhelp,
         ).unwrap();
@@ -427,30 +427,27 @@ fn test_simple_metrics() {
     let hz = Unit::new().time(Time::Sec, -1).unwrap();
     let mut freq = Metric::new(
         "frequency",
-        0,
+        thread_rng().gen::<f64>(),
         Semantics::Instant,
         hz,
-        thread_rng().gen::<f64>(),
         "", "",
     ).unwrap();
 
     // string metric
     let mut color = Metric::new(
         "color",
-        0,
+        String::from("cyan"),
         Semantics::Discrete,
         Unit::new(),
-        String::from("cyan"),
         "Color", "",
     ).unwrap();
 
     // u32 metric
     let mut photons = Metric::new(
         "photons",
-        0,
+        thread_rng().gen::<u32>(),
         Semantics::Counter,
         Unit::new().count(Count::One, 1).unwrap(),
-        thread_rng().gen::<u32>(),
         "No. of photons",
         "Number of photons emitted by source",
     ).unwrap();
