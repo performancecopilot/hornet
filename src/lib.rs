@@ -21,4 +21,7 @@ const TOC_BLOCK_COUNT: u64 = 3;
 
 type Endian = byteorder::LittleEndian;
 
+#[macro_use]
+mod private;
+
 pub mod client;

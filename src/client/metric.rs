@@ -16,22 +16,33 @@ pub (super) enum MTCode {
     String
 }
 
-/// Generic type for any Metric's value
-pub trait MetricType {
-    /// Returns the MMV metric type code
-    fn type_code(&self) -> u32;
-    /// Writes the byte representation of the value to a writer.
-    ///
-    /// For integer and float types, the byte sequence is little endian.
-    ///
-    /// For the string type, the UTF-8 byte sequence is suffixed with a null byte.
-    fn write_to_writer<W: WriteBytesExt>(&self, writer: &mut W) -> io::Result<()>;
+mod private {
+    use byteorder::WriteBytesExt;
+    use std::io;
+
+    /// Generic type for any Metric's value
+    pub trait MetricType {
+        private_decl!{}
+
+        /// Returns the MMV metric type code
+        fn type_code(&self) -> u32;
+        /// Writes the byte representation of the value to a writer.
+        ///
+        /// For integer and float types, the byte sequence is little endian.
+        ///
+        /// For the string type, the UTF-8 byte sequence is suffixed with a null byte.
+        fn write_to_writer<W: WriteBytesExt>(&self, writer: &mut W) -> io::Result<()>;
+    }
 }
+
+pub (super) use self::private::MetricType;
 
 macro_rules! impl_metric_type_for (
     ($typ:tt, $base_typ:tt, $type_code:expr) => (
         impl MetricType for $typ {
-            
+
+            private_impl!{}
+
             fn type_code(&self) -> u32 {
                 $type_code as u32
             }
@@ -57,6 +68,8 @@ impl_metric_type_for!(f32, u32, MTCode::F32);
 impl_metric_type_for!(f64, u64, MTCode::F64);
 
 impl MetricType for String {
+    private_impl!{}
+    
     fn type_code(&self) -> u32 {
         MTCode::String as u32
     }
