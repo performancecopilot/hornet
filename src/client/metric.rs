@@ -47,7 +47,7 @@ macro_rules! impl_metric_type_for (
                 $type_code as u32
             }
 
-            fn write_to_writer<W: WriteBytesExt>(&self, mut w: &mut W)
+            fn write_to_writer<W: WriteBytesExt>(&self, w: &mut W)
             -> io::Result<()> {
                 w.write_u64::<super::Endian>(
                     unsafe {
@@ -69,12 +69,12 @@ impl_metric_type_for!(f64, u64, MTCode::F64);
 
 impl MetricType for String {
     private_impl!{}
-    
+
     fn type_code(&self) -> u32 {
         MTCode::String as u32
     }
 
-    fn write_to_writer<W: Write>(&self, mut writer: &mut W) -> io::Result<()> {
+    fn write_to_writer<W: Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(self.as_bytes())?;
         writer.write_all(&[0])
     }
