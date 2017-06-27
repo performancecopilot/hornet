@@ -25,8 +25,7 @@ pub trait MetricType {
     /// For integer and float types, the byte sequence is little endian.
     ///
     /// For the string type, the UTF-8 byte sequence is suffixed with a null byte.
-    fn write_to_writer<W: WriteBytesExt>(&self, writer: &mut W)
-        -> io::Result<()>;
+    fn write_to_writer<W: WriteBytesExt>(&self, writer: &mut W) -> io::Result<()>;
 }
 
 macro_rules! impl_metric_type_for (
@@ -70,7 +69,7 @@ impl MetricType for String {
 
 #[derive(Copy, Clone)]
 /// Scale for the space component of a unit
-pub enum SpaceScale {
+pub enum Space {
     /// byte
     Byte = 0,
     /// kilobyte (1024 bytes) 
@@ -89,7 +88,7 @@ pub enum SpaceScale {
 
 #[derive(Copy, Clone)]
 /// Scale for the time component of a unit
-pub enum TimeScale {
+pub enum Time {
     /// nanosecond
     NSec = 0,
     /// microsecond
@@ -106,83 +105,13 @@ pub enum TimeScale {
 
 #[derive(Copy, Clone)]
 /// Scale for the count component of a unit
-pub enum CountScale {
+pub enum Count {
     One = 0
 }
 
 #[derive(Copy, Clone)]
 /// Unit for a Metric
 pub struct Unit {
-    /// Space scale
-    pub space_scale: SpaceScale,
-    /// Time scale
-    pub time_scale: TimeScale,
-    /// Count scale
-    pub count_scale: CountScale,
-    /// Space dimension (uses least-significant 4 bits only)
-    pub space_dim: i8,
-    /// Time dimension (uses least-significant 4 bits only)
-    pub time_dim: i8,
-    /// Count dimension (uses least-significant 4 bits only)
-    pub count_dim: i8
-}
-
-lazy_static! {
-    static ref SPACE_UNIT: Unit = {
-        let mut unit = Unit::new();
-        unit.space_dim = 1;
-        unit
-    };
-
-    static ref TIME_UNIT: Unit = {
-        let mut unit = Unit::new();
-        unit.time_dim = 1;
-        unit
-    };
-
-    static ref COUNT_UNIT: Unit = {
-        let mut unit = Unit::new();
-        unit.count_dim = 1;
-        unit
-    };
-}
-
-impl Unit {
-    /// Returns an empty unit with all dimensions set to `0`
-    /// and all scales set to an undefined variant
-    pub fn new() -> Self {
-        Unit {
-            space_scale: SpaceScale::Byte,
-            time_scale: TimeScale::NSec,
-            count_scale: CountScale::One,
-            space_dim: 0,
-            time_dim: 0,
-            count_dim: 0
-        }
-    }
-
-    /// Returns a unit with space dimension `1` and given
-    /// space scale
-    pub fn space(space_scale: SpaceScale) -> Self {
-        let mut unit = SPACE_UNIT.clone();
-        unit.space_scale = space_scale;
-        unit
-    }
-
-    /// Returns a unit with time dimension `1` and given
-    /// time scale
-    pub fn time(time_scale: TimeScale) -> Self {
-        let mut unit = TIME_UNIT.clone();
-        unit.time_scale = time_scale;
-        unit
-    }
-
-    /// Returns a unit with count dimension `1` and given
-    /// count scale
-    pub fn count() -> Self {
-        COUNT_UNIT.clone()
-    }
-
     /*
         pmapi representation of a unit. below, 31 refers to MSB
         bits 31 - 28 : space dim   (signed)
@@ -193,18 +122,48 @@ impl Unit {
              11 - 8  : count scale (unsigned)
               7 - 0  : zero pad
     */
-    fn pmapi_repr(&self) -> u32 {
-        let mut repr = 0;
+    pmapi_repr: u32
+}
 
-        repr |= ((self.space_dim as i32) & ((1 << 4) - 1)) << 28;
-        repr |= ((self.time_dim  as i32) & ((1 << 4) - 1)) << 24;
-        repr |= ((self.count_dim as i32) & ((1 << 4) - 1)) << 20;
+macro_rules! check_dim (
+    ($dim:expr) => (
+        if $dim > 7 || $dim < -8 {
+            return Err(format!("Unit dimension {} is out of range [-8, 7]", $dim))
+        }
+    )
+);
 
-        repr |= (self.space_scale as i32) << 16;
-        repr |= (self.time_scale  as i32) << 12;
-        repr |= (self.count_scale as i32) << 8;
+impl Unit {
+    /// Returns an empty unit with all dimensions set to `0`
+    /// and all scales set to an undefined variant
+    pub fn new() -> Self {
+        Unit {
+            pmapi_repr: 0
+        }
+    }
 
-        repr as u32
+    /// Modifies and returns the unit with given space scale and dimension
+    pub fn space(mut self, scale: Space, dim: i8) -> Result<Self, String> {
+        check_dim!(dim);
+        self.pmapi_repr |= (scale as u32) << 16;
+        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 28;
+        Ok(self)
+    }
+
+    /// Modifies and returns the unit with given time scale and dimension
+    pub fn time(mut self, time: Time, dim: i8) -> Result<Self, String> {
+        check_dim!(dim);
+        self.pmapi_repr |= (time as u32) << 12;
+        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 24;
+        Ok(self)
+    }
+
+    /// Modifies and returns the unit with given count scale and dimension
+    pub fn count(mut self, count: Count, dim: i8) -> Result<Self, String> {
+        check_dim!(dim);
+        self.pmapi_repr |= (count as u32) << 8;
+        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 20;
+        Ok(self)
     }
 }
 
@@ -273,7 +232,7 @@ impl<T: MetricType + Clone> Metric<T> {
             item: item & ((1 << ITEM_BIT_LEN) - 1),
             sem: sem,
             indom: 0,
-            unit: unit.pmapi_repr(),
+            unit: unit.pmapi_repr,
             shorthelp: shorthelp_text.to_owned(),
             longhelp: longhelp_text.to_owned(),
             val: init_val,
@@ -319,43 +278,38 @@ impl<T: MetricType + Clone> Metric<T> {
 
 #[test]
 fn test_units() {
-    assert_eq!(Unit::new().pmapi_repr(), 0);
-
-    assert_eq!(SPACE_UNIT.pmapi_repr(), 1 << 28);
-    assert_eq!(TIME_UNIT.pmapi_repr(), 1 << 24);
-    assert_eq!(COUNT_UNIT.pmapi_repr(), 1 << 20);
+    assert_eq!(Unit::new().pmapi_repr, 0);
 
     assert_eq!(
-        Unit::space(SpaceScale::KByte).pmapi_repr(),
-        1 << 28 | (SpaceScale::KByte as u32) << 16
+        Unit::new().space(Space::KByte, 1).unwrap().pmapi_repr,
+        1 << 28 | (Space::KByte as u32) << 16
     );
     assert_eq!(
-        Unit::time(TimeScale::Min).pmapi_repr(),
-        1 << 24 | (TimeScale::Min as u32) << 12
+        Unit::new().time(Time::Min, 1).unwrap().pmapi_repr,
+        1 << 24 | (Time::Min as u32) << 12
     );
     assert_eq!(
-        Unit::count().pmapi_repr(),
-        1 << 20 | (CountScale::One as u32) << 8
+        Unit::new().count(Count::One, 1).unwrap().pmapi_repr,
+        1 << 20 | (Count::One as u32) << 8
     );
 
     let (space_dim, time_dim, count_dim) = (-3, -2, 1);
-    let unit = Unit {
-        space_scale: SpaceScale::EByte,
-        time_scale: TimeScale::Hour,
-        count_scale: CountScale::One,
-        space_dim: space_dim,
-        time_dim: time_dim,
-        count_dim: count_dim
-    };
-    assert_eq!(
-        unit.pmapi_repr(),
+    let unit = Unit::new()
+        .space(Space::EByte, space_dim).unwrap()
+        .time(Time::Hour, time_dim).unwrap()
+        .count(Count::One, count_dim).unwrap();
+
+    assert_eq!(unit.pmapi_repr,
         ((space_dim as u32) & ((1 << 4) - 1)) << 28 |
         ((time_dim as u32) & ((1 << 4) - 1)) << 24 |
         ((count_dim as u32) & ((1 << 4) - 1)) << 20 |
-        (SpaceScale::EByte as u32) << 16 |
-        (TimeScale::Hour as u32) << 12 |
-        (CountScale::One as u32) << 8
+        (Space::EByte as u32) << 16 |
+        (Time::Hour as u32) << 12 |
+        (Count::One as u32) << 8
     );
+
+    assert!(Unit::new().space(Space::Byte, 8).is_err());
+    assert!(Unit::new().time(Time::Sec, -9).is_err());
 }
 
 #[test]
@@ -366,14 +320,14 @@ fn test_invalid_metric_strings() {
         .take(super::METRIC_NAME_MAX_LEN as usize).collect();
     let m1 = Metric::new(
         &invalid_name,
-        0, Semantics::Counter, Unit::count(), 0, "", "",
+        0, Semantics::Discrete, Unit::new(), 0, "", "",
     );
     assert!(m1.is_err());
 
     let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
     let m2 = Metric::new(
-        "", 0, Semantics::Counter, Unit::count(), 0,
+        "", 0, Semantics::Discrete, Unit::new(), 0,
         &invalid_shorthelp,
         "",
     );
@@ -382,7 +336,7 @@ fn test_invalid_metric_strings() {
     let invalid_longhelp: String = thread_rng().gen_ascii_chars()
         .take(super::STRING_BLOCK_LEN as usize).collect();
     let m3 = Metric::new(
-        "", 0, Semantics::Counter, Unit::count(), 0, "",
+        "", 0, Semantics::Discrete, Unit::new(), 0, "",
         &invalid_longhelp,
     );
     assert!(m3.is_err());
@@ -417,8 +371,8 @@ fn test_random_numeric_metrics() {
         let mut metric = Metric::new(
             &rnd_name,
             rnd_item,
-            Semantics::Counter,
-            Unit::count(),
+            Semantics::Discrete,
+            Unit::new(),
             rnd_val1,
             &rnd_shorthelp,
             &rnd_longhelp,
@@ -457,8 +411,7 @@ fn test_simple_metrics() {
     use super::Client;
 
     // f64 metric
-    let mut hz = Unit::time(TimeScale::Sec);
-    hz.time_dim = -1;
+    let hz = Unit::new().time(Time::Sec, -1).unwrap();
     let mut freq = Metric::new(
         "frequency",
         0,
@@ -483,7 +436,7 @@ fn test_simple_metrics() {
         "photons",
         0,
         Semantics::Counter,
-        Unit::count(),
+        Unit::new().count(Count::One, 1).unwrap(),
         thread_rng().gen::<u32>(),
         "No. of photons",
         "Number of photons emitted by source",
