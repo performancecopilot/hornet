@@ -2,7 +2,7 @@ use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use regex::bytes::Regex;
 use std::env;
-use std::ffi::{CString, OsStr, OsString};
+use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -27,7 +27,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{Metric, MetricType, STRING_METRIC_TYPE_CODE};
+use self::metric::{Metric, MetricType, MTCode};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -280,7 +280,7 @@ impl Client {
 
     fn write_mmv_header(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {    
         // MMV\0
-        c.write_all(CString::new("MMV")?.to_bytes_with_nul())?;
+        c.write_all(b"MMV\0")?;
         // version
         c.write_u32::<Endian>(1)?;
         // generation1
@@ -337,8 +337,9 @@ impl Client {
 
         let (mut value_offset, mut value_size) = (0, 0);
 
-        { // write metric, value, string blocks
-
+        { // this block makes sure mmap_view goes out of scope before we return Ok(self)
+            
+            // write metric, value, string blocks
             let mmap_view = self.wi.mmap_view.as_mut().unwrap();
             let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
@@ -348,7 +349,8 @@ impl Client {
             let metric_block_off = self.wi.metric_sec_off + i*METRIC_BLOCK_LEN;
             c.set_position(metric_block_off);
             // name
-            c.write_all(CString::new(m.name())?.to_bytes_with_nul())?;
+            c.write_all(m.name().as_bytes())?;
+            c.write_all(&[0])?;
             c.set_position(metric_block_off + METRIC_NAME_MAX_LEN);
             // item
             c.write_u32::<Endian>(m.item())?;
@@ -373,7 +375,7 @@ impl Client {
             let value_block_off = self.wi.value_sec_off + i*VALUE_BLOCK_LEN;
             c.set_position(value_block_off);
             let mut string_val_off_off = None;
-            if type_code == STRING_METRIC_TYPE_CODE {
+            if type_code == MTCode::String as u32 {
                 // value
                 c.write_u64::<Endian>(0)?;
                 // extra (string offset)
@@ -403,7 +405,8 @@ impl Client {
                 c.write_u64::<Endian>(string_block_off)?;
 
                 c.set_position(string_block_off);
-                c.write_all(CString::new(m.shorthelp())?.to_bytes_with_nul())?;
+                c.write_all(m.shorthelp().as_bytes())?;
+                c.write_all(&[0])?;
 
                 self.wi.n_strings += 1;
                 string_block_off += STRING_BLOCK_LEN;
@@ -415,27 +418,25 @@ impl Client {
                 c.write_u64::<Endian>(string_block_off)?;
 
                 c.set_position(string_block_off);
-                c.write_all(CString::new(m.longhelp())?.to_bytes_with_nul())?;
+                c.write_all(m.longhelp().as_bytes())?;
+                c.write_all(&[0])?;
 
                 self.wi.n_strings += 1;
                 string_block_off += STRING_BLOCK_LEN;
             }
 
             // string value
-            match string_val_off_off {
-                Some(off_off) => {
-                    c.set_position(off_off);
-                    c.write_u64::<Endian>(string_block_off)?;
+            if let Some(off_off) = string_val_off_off {
+                c.set_position(off_off);
+                c.write_u64::<Endian>(string_block_off)?;
 
-                    c.set_position(string_block_off);
-                    m.write_val(&mut c)?;
+                c.set_position(string_block_off);
+                m.write_val(&mut c)?;
 
-                    value_offset = string_block_off as usize;
-                    value_size = STRING_BLOCK_LEN as usize;
+                value_offset = string_block_off as usize;
+                value_size = STRING_BLOCK_LEN as usize;
 
-                    self.wi.n_strings += 1;
-                },
-                None => {}
+                self.wi.n_strings += 1;
             }
 
             // update string count in string TOC block
@@ -444,8 +445,9 @@ impl Client {
 
         }
 
-        { // set mmap_view for metric
+        { // this block makes sure mmap_view goes out of scope before we return Ok(self)
 
+            // set mmap_view for metric
             let mmap_view = unsafe {
                 self.wi.mmap_view.as_mut().unwrap().clone()
             };
@@ -460,7 +462,9 @@ impl Client {
     }
 
     pub fn export(&mut self) -> io::Result<()> {
-        {
+
+        { // this block makes sure mmap_view goes out of scope before we return Ok(self)
+
             let mmap_view = self.wi.mmap_view.as_mut().unwrap();
             let mut cur = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 

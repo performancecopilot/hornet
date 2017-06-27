@@ -1,19 +1,20 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
-use std::ffi::CString;
 use std::io;
 use std::io::{Cursor, Write};
 use std::mem;
 
 const ITEM_BIT_LEN: usize = 10;
 
-pub const I32_METRIC_TYPE_CODE: u32 = 0;
-pub const U32_METRIC_TYPE_CODE: u32 = 1;
-pub const I64_METRIC_TYPE_CODE: u32 = 2;
-pub const U64_METRIC_TYPE_CODE: u32 = 3;
-pub const F32_METRIC_TYPE_CODE: u32 = 4;
-pub const F64_METRIC_TYPE_CODE: u32 = 5;
-pub const STRING_METRIC_TYPE_CODE: u32 = 6;
+pub (super) enum MTCode {
+    I32 = 0,
+    U32,
+    I64,
+    U64,
+    F32,
+    F64,
+    String
+}
 
 /// Generic type for any Metric's value
 pub trait MetricType {
@@ -33,7 +34,7 @@ macro_rules! impl_metric_type_for (
         impl MetricType for $typ {
             
             fn type_code(&self) -> u32 {
-                $type_code
+                $type_code as u32
             }
 
             fn write_to_writer<W: WriteBytesExt>(&self, mut w: &mut W)
@@ -49,20 +50,21 @@ macro_rules! impl_metric_type_for (
     )
 );
 
-impl_metric_type_for!(i32, u32, I32_METRIC_TYPE_CODE);
-impl_metric_type_for!(u32, u32, U32_METRIC_TYPE_CODE);
-impl_metric_type_for!(i64, u64, I64_METRIC_TYPE_CODE);
-impl_metric_type_for!(u64, u64, U64_METRIC_TYPE_CODE);
-impl_metric_type_for!(f32, u32, F32_METRIC_TYPE_CODE);
-impl_metric_type_for!(f64, u64, F64_METRIC_TYPE_CODE);
+impl_metric_type_for!(i32, u32, MTCode::I32);
+impl_metric_type_for!(u32, u32, MTCode::U32);
+impl_metric_type_for!(i64, u64, MTCode::I64);
+impl_metric_type_for!(u64, u64, MTCode::U64);
+impl_metric_type_for!(f32, u32, MTCode::F32);
+impl_metric_type_for!(f64, u64, MTCode::F64);
 
 impl MetricType for String {
     fn type_code(&self) -> u32 {
-        STRING_METRIC_TYPE_CODE
+        MTCode::String as u32
     }
 
     fn write_to_writer<W: Write>(&self, mut writer: &mut W) -> io::Result<()> {
-        writer.write_all(CString::new(self.as_str())?.to_bytes_with_nul())
+        writer.write_all(self.as_bytes())?;
+        writer.write_all(&[0])
     }
 }
 
@@ -127,19 +129,19 @@ pub struct Unit {
 
 lazy_static! {
     static ref SPACE_UNIT: Unit = {
-        let mut unit = Unit::empty();
+        let mut unit = Unit::new();
         unit.space_dim = 1;
         unit
     };
 
     static ref TIME_UNIT: Unit = {
-        let mut unit = Unit::empty();
+        let mut unit = Unit::new();
         unit.time_dim = 1;
         unit
     };
 
     static ref COUNT_UNIT: Unit = {
-        let mut unit = Unit::empty();
+        let mut unit = Unit::new();
         unit.count_dim = 1;
         unit
     };
@@ -148,7 +150,7 @@ lazy_static! {
 impl Unit {
     /// Returns an empty unit with all dimensions set to `0`
     /// and all scales set to an undefined variant
-    pub fn empty() -> Self {
+    pub fn new() -> Self {
         Unit {
             space_scale: SpaceScale::Byte,
             time_scale: TimeScale::NSec,
@@ -310,14 +312,14 @@ impl<T: MetricType + Clone> Metric<T> {
         self.mmap_view = mmap_view;
     }
 
-    pub (super) fn write_val(&mut self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+    pub (super) fn write_val(&self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()> {
         self.val.write_to_writer(cursor)
     }
 }
 
 #[test]
 fn test_units() {
-    assert_eq!(Unit::empty().pmapi_repr(), 0);
+    assert_eq!(Unit::new().pmapi_repr(), 0);
 
     assert_eq!(SPACE_UNIT.pmapi_repr(), 1 << 28);
     assert_eq!(TIME_UNIT.pmapi_repr(), 1 << 24);
@@ -471,7 +473,7 @@ fn test_simple_metrics() {
         "color",
         0,
         Semantics::Discrete,
-        Unit::empty(),
+        Unit::new(),
         String::from("cyan"),
         "Color", "",
     ).unwrap();
