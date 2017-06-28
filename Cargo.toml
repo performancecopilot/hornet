@@ -11,9 +11,11 @@ bitflags = "0.9.1"
 byteorder = "1.0.0"
 lazy_static = "0.2.8"
 memmap = "0.5.2"
-rand = "0.3.15"
 regex = "0.2"
 time = "0.1"
+
+[dev-dependencies]
+rand = "0.3.15"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.8.0"
