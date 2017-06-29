@@ -2,6 +2,14 @@
 
 This is a work-in-progress PCP Memory Mapped Value (MMV) instrumentation API in Rust.
 
+Currently, only singleton metrics are supported. There is a simple example of it's usage at `examples/physical.rs`. To run it, do
+
+```
+cargo run --example physical
+```
+
+If you have a valid PCP installation, the MMV file will be found at `$PCP_TMP_DIR/mmv/`. Otherwise, it'll be at `/tmp/mmv/`.
+
 ## License
 
 Licensed under either of
