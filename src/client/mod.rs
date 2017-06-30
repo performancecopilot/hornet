@@ -23,11 +23,12 @@ use super::{
     NUMERIC_VALUE_SIZE,
     METRIC_NAME_MAX_LEN,
     MAX_STRINGS_PER_METRIC,
-    TOC_BLOCK_COUNT
+    INDOM_BLOCK_LEN,
+    INSTANCE_BLOCK_LEN
 };
 
 pub mod metric;
-use self::metric::{Metric, MetricType, MTCode};
+use self::metric::{InstanceMetric, Metric, MetricType, MTCode};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -157,30 +158,60 @@ bitflags! {
 
 struct MMVWriterInfo {
     mmap_view: Option<MmapViewSync>,
-    n_metrics: u64,
-    n_strings: u64,
+
+    // generation number
     gen: i64,
     gen2off: u64,
+
+    // counts of various *things*
+    n_indoms: u64,
+    n_instances: u64,
+    n_metrics: u64,
+    n_metric_blks: u64, // n_instances + n_metrics
+    n_strings: u64,
+    n_toc: u64,
+
+    // offsets to various blocks
+    indom_sec_off: u64,
+    instance_sec_off: u64,
     metric_sec_off: u64,
     value_sec_off: u64,
     string_sec_off: u64,
-    metric_idx: u64,
-    n_strings_off: u64
+    string_toc_off: u64,
+
+    // offsets to counts
+    n_toc_off: u64,
+    n_strings_off: u64,
+
+    // running indexes of registered *things*
+    indom_idx: u64,
+    instance_idx: u64,
+    metric_blk_idx: u64
 }
 
 impl MMVWriterInfo {
     fn new() -> Self {
         MMVWriterInfo {
             mmap_view: None,
+            n_indoms: 0,
+            n_instances: 0,
             n_metrics: 0,
+            n_metric_blks: 0,
             n_strings: 0,
             gen: 0,
             gen2off: 0,
+            indom_sec_off: 0,
+            instance_sec_off: 0,
             metric_sec_off: 0,
             value_sec_off: 0,
             string_sec_off: 0,
-            metric_idx: 0,
-            n_strings_off: 0
+            metric_blk_idx: 0,
+            instance_idx: 0,
+            indom_idx: 0,
+            n_strings_off: 0,
+            string_toc_off: 0,
+            n_toc: 0,
+            n_toc_off: 0
         }
     }
 }
@@ -216,12 +247,29 @@ impl Client {
         })
     }
 
-    pub fn begin(&mut self, n_metrics: u64) -> io::Result<&mut Client> {
+    pub fn begin(&mut self, n_indoms: u64, n_instances: u64, n_metrics: u64) -> io::Result<&mut Client> {
         self.wi.n_metrics = n_metrics;
+        self.wi.n_toc = 2; // metric + value
+
+        if n_indoms > 0 && n_instances > 0 {
+            self.wi.n_indoms = n_indoms;
+            self.wi.n_instances = n_instances;
+            self.wi.n_toc += 2; // indom + instance
+        }
+        self.wi.n_metric_blks = self.wi.n_metrics + self.wi.n_instances;
+
+        let hdr_toc_len =
+            HDR_LEN +
+            TOC_BLOCK_LEN*(self.wi.n_toc + 1 /* reserve space for possible string TOC */ );
         let mmv_size = (
-            HDR_LEN + TOC_BLOCK_COUNT*TOC_BLOCK_LEN
-            + self.wi.n_metrics*(METRIC_BLOCK_LEN + VALUE_BLOCK_LEN)
-            + self.wi.n_metrics*MAX_STRINGS_PER_METRIC*STRING_BLOCK_LEN
+            hdr_toc_len +
+            self.wi.n_indoms*INDOM_BLOCK_LEN +
+            self.wi.n_instances*INSTANCE_BLOCK_LEN +
+            self.wi.n_metric_blks*(
+                METRIC_BLOCK_LEN +
+                VALUE_BLOCK_LEN +
+                MAX_STRINGS_PER_METRIC*STRING_BLOCK_LEN
+            )
         ) as usize;
         
         let mut file = OpenOptions::new().read(true).write(true).create(true)
@@ -236,11 +284,26 @@ impl Client {
 
             --- MMV Header
             
+            --- Instance Domain TOC Block
+
+            --- Instances TOC Block
+
             --- Metrics TOC Block
             
             --- Values TOC Block
 
             --- Strings TOC Block
+
+            --- Instance Domain section
+                --- instance domain block 1
+                --- instance domain block 2
+                --- ...
+
+            --- Instances section
+                --- instance block 1 for instance domain 1
+                --- instance block 2 for instance domain 1
+                --- instance block 1 for instance domain 2
+                --- ...
 
             --- Metrics section
                 --- metric block 1
@@ -269,9 +332,24 @@ impl Client {
         {
             let mut cur = Cursor::new(unsafe { mmap_view.as_mut_slice() });
             self.write_mmv_header(&mut cur)?;
+
+            if self.wi.n_indoms > 0 {
+                self.wi.indom_sec_off = hdr_toc_len;
+                self.wi.instance_sec_off = self.wi.indom_sec_off + INDOM_BLOCK_LEN*self.wi.n_indoms;
+                self.wi.metric_sec_off = self.wi.instance_sec_off + INSTANCE_BLOCK_LEN*self.wi.n_instances;
+ 
+                self.write_indom_toc_block(&mut cur)?;
+                self.write_instance_toc_block(&mut cur)?;
+            } else {
+                self.wi.metric_sec_off = hdr_toc_len;
+            }
             self.write_metric_toc_block(&mut cur)?;
+
+            self.wi.value_sec_off = self.wi.metric_sec_off + METRIC_BLOCK_LEN*self.wi.n_metric_blks;
             self.write_values_toc_block(&mut cur)?;
-            self.write_strings_toc_block(&mut cur)?;
+
+            self.wi.string_sec_off = self.wi.value_sec_off + VALUE_BLOCK_LEN*self.wi.n_metric_blks;
+            self.wi.string_toc_off = cur.position();
         }
 
         self.wi.mmap_view = Some(mmap_view);
@@ -290,7 +368,8 @@ impl Client {
         self.wi.gen2off = c.position();
         c.write_i64::<Endian>(0)?;
         // no. of toc blocks
-        c.write_u32::<Endian>(TOC_BLOCK_COUNT as u32)?;
+        self.wi.n_toc_off = c.position();
+        c.write_u32::<Endian>(self.wi.n_toc as u32)?;
         // flags
         c.write_u32::<Endian>(self.flags.bits())?;
         // pid
@@ -298,14 +377,31 @@ impl Client {
         // cluster id
         c.write_u32::<Endian>(self.cluster_id)
     }
+
+    fn write_indom_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+        // section type
+        c.write_u32::<Endian>(1)?;
+        // no. of entries
+        c.write_u32::<Endian>(self.wi.n_indoms as u32)?;
+        // section offset
+        c.write_u64::<Endian>(self.wi.indom_sec_off)
+    }
+
+    fn write_instance_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+        // section type
+        c.write_u32::<Endian>(2)?;
+        // no. of entries
+        c.write_u32::<Endian>(self.wi.n_instances as u32)?;
+        // section offset
+        c.write_u64::<Endian>(self.wi.instance_sec_off)
+    }
     
     fn write_metric_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
         // section type
         c.write_u32::<Endian>(3)?;
         // no. of entries
-        c.write_u32::<Endian>(self.wi.n_metrics as u32)?;
+        c.write_u32::<Endian>(self.wi.n_metric_blks as u32)?;
         // section offset
-        self.wi.metric_sec_off = HDR_LEN + TOC_BLOCK_LEN*TOC_BLOCK_COUNT;
         c.write_u64::<Endian>(self.wi.metric_sec_off)
     }
 
@@ -313,152 +409,198 @@ impl Client {
         // section type
         c.write_u32::<Endian>(4)?;
         // no. of entries
-        c.write_u32::<Endian>(self.wi.n_metrics as u32)?;
+        c.write_u32::<Endian>(self.wi.n_metric_blks as u32)?;
         // section offset
-        self.wi.value_sec_off = self.wi.metric_sec_off + METRIC_BLOCK_LEN*self.wi.n_metrics;
         c.write_u64::<Endian>(self.wi.value_sec_off)
     }
 
-    fn write_strings_toc_block(&mut self, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
-        // section type
-        c.write_u32::<Endian>(5)?;
-        // no. of entries
-        self.wi.n_strings_off = c.position();
-        c.write_u32::<Endian>(self.wi.n_strings as u32)?;
-        // section offset
-        self.wi.string_sec_off = self.wi.value_sec_off + VALUE_BLOCK_LEN*self.wi.n_metrics;
-        c.write_u64::<Endian>(self.wi.string_sec_off)
+    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>) -> io::Result<&mut Client> {
+        self.__register_metric(m, 0)
     }
 
-    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>) -> io::Result<&mut Client> {
+    pub fn register_instance_metric<T: MetricType + Clone>(&mut self, im: &mut InstanceMetric<T>) -> io::Result<&mut Client> {
 
-        // TODO: return custom error instead of panicing
-        assert!(self.wi.metric_idx < self.wi.n_metrics);
+        // write metric, value, string blocks
+        let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
+        let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
-        let (mut value_offset, mut value_size) = (0, 0);
+        let indom_off = self.wi.indom_sec_off + INDOM_BLOCK_LEN*self.wi.indom_idx;
+        c.set_position(indom_off);
 
-        { // this block makes sure mmap_view goes out of scope before we return Ok(self)
-            
-            // write metric, value, string blocks
-            let mmap_view = self.wi.mmap_view.as_mut().unwrap();
-            let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+        // indom
+        c.write_u32::<Endian>(im.indom())?;
+        // number of instances
+        c.write_u32::<Endian>(im.instance_count())?;
+        // offset to instances
+        let mut instance_blk_off = self.wi.instance_sec_off + INSTANCE_BLOCK_LEN*self.wi.instance_idx;
+        c.write_u64::<Endian>(instance_blk_off)?;
+        // short help
+        if im.shorthelp().len() > 0 {
+            let short_help_off = self.write_mmv_string(&mut c, im.shorthelp())?;
+            c.write_u64::<Endian>(short_help_off)?;
+        }
+        // long help
+        if im.longhelp().len() > 0 {
+            let long_help_off = self.write_mmv_string(&mut c, im.longhelp())?;
+            c.write_u64::<Endian>(long_help_off)?;
+        }
 
-            let i = self.wi.metric_idx;
+        for (instance, metric) in &mut im.metrics {
+            c.set_position(instance_blk_off);
 
-            // metric block
-            let metric_block_off = self.wi.metric_sec_off + i*METRIC_BLOCK_LEN;
-            c.set_position(metric_block_off);
-            // name
-            c.write_all(m.name().as_bytes())?;
-            c.write_all(&[0])?;
-            c.set_position(metric_block_off + METRIC_NAME_MAX_LEN);
-            // item
-            c.write_u32::<Endian>(m.item())?;
-            // type code
-            let type_code = m.type_code();
-            c.write_u32::<Endian>(type_code)?;
-            // sem
-            c.write_u32::<Endian>(*(m.sem()) as u32)?;
-            // unit
-            c.write_u32::<Endian>(m.unit())?;
-            // indom
-            c.write_u32::<Endian>(m.indom())?;
+            // indom offset
+            c.write_u64::<Endian>(indom_off)?;
             // zero pad
             c.write_u32::<Endian>(0)?;
-            // record short and long help offset
-            let shorthelp_off_off = c.position();
-            c.write_u64::<Endian>(0)?;
-            let longhelp_off_off = c.position();
-            c.write_u64::<Endian>(0)?;
+            // instance id
+            c.write_u32::<Endian>(InstanceMetric::<T>::instance_id(&instance))?;
+            // instance
+            c.write_all(instance.as_bytes())?;
+            c.write_all(&[0])?;
 
-            // value block
-            let value_block_off = self.wi.value_sec_off + i*VALUE_BLOCK_LEN;
-            c.set_position(value_block_off);
-            let mut string_val_off_off = None;
-            if type_code == MTCode::String as u32 {
-                // value
-                c.write_u64::<Endian>(0)?;
-                // extra (string offset)
-                string_val_off_off = Some(c.position());
-                c.write_u64::<Endian>(0)?;
-            } else {
-                value_offset = c.position() as usize;
-                value_size = NUMERIC_VALUE_SIZE;
+            self.__register_metric(metric, instance_blk_off)?;
 
-                // value
-                m.write_val(&mut c)?;
-                // extra (string offset)
-                c.write_u64::<Endian>(0)?;
-            }
-            // offset to metric block
-            c.write_u64::<Endian>(metric_block_off)?;
-            // offset to instance block
-            c.write_u64::<Endian>(0)?;
-
-            // string block
-            let mut string_block_off = self.wi.string_sec_off
-                + self.wi.n_strings*STRING_BLOCK_LEN;
-
-            // short help
-            if m.shorthelp().len() > 0 {
-                c.set_position(shorthelp_off_off);
-                c.write_u64::<Endian>(string_block_off)?;
-
-                c.set_position(string_block_off);
-                c.write_all(m.shorthelp().as_bytes())?;
-                c.write_all(&[0])?;
-
-                self.wi.n_strings += 1;
-                string_block_off += STRING_BLOCK_LEN;
-            }
-
-            // long help
-            if m.longhelp().len() > 0 {
-                c.set_position(longhelp_off_off);
-                c.write_u64::<Endian>(string_block_off)?;
-
-                c.set_position(string_block_off);
-                c.write_all(m.longhelp().as_bytes())?;
-                c.write_all(&[0])?;
-
-                self.wi.n_strings += 1;
-                string_block_off += STRING_BLOCK_LEN;
-            }
-
-            // string value
-            if let Some(off_off) = string_val_off_off {
-                c.set_position(off_off);
-                c.write_u64::<Endian>(string_block_off)?;
-
-                c.set_position(string_block_off);
-                m.write_val(&mut c)?;
-
-                value_offset = string_block_off as usize;
-                value_size = STRING_BLOCK_LEN as usize;
-
-                self.wi.n_strings += 1;
-            }
-
-            // update string count in string TOC block
-            c.set_position(self.wi.n_strings_off);
-            c.write_u32::<Endian>(self.wi.n_strings as u32)?;
-
+            instance_blk_off += INSTANCE_BLOCK_LEN;
         }
 
-        { // this block makes sure mmap_view goes out of scope before we return Ok(self)
+        self.wi.instance_idx += im.metrics.len() as u64;
+        self.wi.indom_idx += 1;
 
-            // set mmap_view for metric
-            let mmap_view = unsafe {
-                self.wi.mmap_view.as_mut().unwrap().clone()
-            };
-            let (_, value_mmap_view, _) =
-                three_way_split(mmap_view, value_offset, value_size)?;
-            m.set_mmap_view(value_mmap_view);
-
-        }
-
-        self.wi.metric_idx += 1;
         Ok(self)
+    }
+
+    fn __register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>, instance_blk_off: u64) -> io::Result<&mut Client> {
+
+        // TODO: return custom error instead of panicing
+        assert!(self.wi.metric_blk_idx < self.wi.n_metric_blks);
+
+        let (value_offset, value_size);
+
+        // write metric, value, string blocks
+
+        let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
+        let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+
+        let i = self.wi.metric_blk_idx;
+
+        // metric block
+        let metric_blk_off = self.wi.metric_sec_off + i*METRIC_BLOCK_LEN;
+        c.set_position(metric_blk_off);
+        // name
+        c.write_all(m.name().as_bytes())?;
+        c.write_all(&[0])?;
+        c.set_position(metric_blk_off + METRIC_NAME_MAX_LEN);
+        // item
+        c.write_u32::<Endian>(m.item())?;
+        // type code
+        let type_code = m.type_code();
+        c.write_u32::<Endian>(type_code)?;
+        // sem
+        c.write_u32::<Endian>(*(m.sem()) as u32)?;
+        // unit
+        c.write_u32::<Endian>(m.unit())?;
+        // indom
+        c.write_u32::<Endian>(m.indom())?;
+        // zero pad
+        c.write_u32::<Endian>(0)?;
+        // short help
+        if m.shorthelp().len() > 0 {
+            let short_help_off = self.write_mmv_string(&mut c, m.shorthelp())?;
+            c.write_u64::<Endian>(short_help_off)?;
+        }
+        // long help
+        if m.longhelp().len() > 0 {
+            let long_help_off = self.write_mmv_string(&mut c, m.longhelp())?;
+            c.write_u64::<Endian>(long_help_off)?;
+        }
+
+        // value block
+        let value_block_off = self.wi.value_sec_off + i*VALUE_BLOCK_LEN;
+        c.set_position(value_block_off);
+        if type_code == MTCode::String as u32 {
+            // numeric value
+            c.write_u64::<Endian>(0)?;
+
+            // string offset
+
+            // we can't pass the actual `m.val()` string to write_mmv_string,
+            // and in order to not replicate the logic of write_mmv_string here,
+            // we perform an extra write of the string to a temp buffer so we
+            // can pass that to write_mmv_string.
+            let mut str_buf = [0u8; STRING_BLOCK_LEN as usize];
+            m.write_val(&mut (&mut str_buf as &mut [u8]))?;
+
+            let str_val = unsafe { str::from_utf8_unchecked(&str_buf) };
+            let string_val_off = self.write_mmv_string(&mut c, str_val)?;
+            c.write_u64::<Endian>(string_val_off)?;
+
+            value_offset = string_val_off as usize;
+            value_size = STRING_BLOCK_LEN as usize;
+        } else {
+            value_offset = c.position() as usize;
+            value_size = NUMERIC_VALUE_SIZE;
+
+            // numeric value
+            m.write_val(&mut c)?;
+            // string offset
+            c.write_u64::<Endian>(0)?;
+        }
+        // offset to metric block
+        c.write_u64::<Endian>(metric_blk_off)?;
+        // offset to instance block
+        c.write_u64::<Endian>(instance_blk_off)?;
+
+        // set mmap_view for metric
+        let mmap_view = unsafe {
+            self.wi.mmap_view.as_mut().unwrap().clone()
+        };
+        let (_, value_mmap_view, _) =
+            three_way_split(mmap_view, value_offset, value_size)?;
+        m.set_mmap_view(value_mmap_view);
+
+        self.wi.metric_blk_idx += 1;
+        Ok(self)
+    }
+
+    // writes `string` at end of string section, updates string count in string TOC,
+    // and returns the offset `string` was written at
+    //
+    // leaves the cursor in the original position it was at when passed
+    //
+    // when writing first string in MMV, also writes the string TOC block
+    fn write_mmv_string(&mut self, c: &mut Cursor<&mut [u8]>, string: &str) -> io::Result<u64> {
+        let orig_pos = c.position();
+
+        if self.wi.n_strings == 0 {
+            // update toc count
+            self.wi.n_toc += 1;
+            c.set_position(self.wi.n_toc_off);
+            c.write_u32::<Endian>(self.wi.n_toc as u32)?;
+
+            // write string toc
+            c.set_position(self.wi.string_toc_off);
+            // section type
+            c.write_u32::<Endian>(5)?;
+            // no. of entries
+            self.wi.n_strings_off = c.position();
+            c.write_u32::<Endian>(self.wi.n_strings as u32)?;
+            // section offset
+            c.write_u64::<Endian>(self.wi.string_sec_off)?;
+        }
+
+        // write string in string section
+        let string_block_off = self.wi.string_sec_off + STRING_BLOCK_LEN*self.wi.n_strings;
+        c.set_position(string_block_off);
+        c.write_all(string.as_bytes())?;
+        c.write_all(&[0])?;
+
+        // update string count in string toc
+        self.wi.n_strings += 1;
+        c.set_position(self.wi.n_strings_off);
+        c.write_u32::<Endian>(self.wi.n_strings as u32)?;
+
+        c.set_position(orig_pos);
+        Ok(string_block_off)
     }
 
     pub fn export(&mut self) -> io::Result<()> {
@@ -503,7 +645,7 @@ fn test_mmv_header() {
     let cluster_id = thread_rng().gen::<u32>();
     let flags = PROCESS | SENTINEL;
     let mut client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
-    client.begin(0).unwrap().export().unwrap();
+    client.begin(0, 0, 0).unwrap().export().unwrap();
 
     let mut file = File::open(client.mmv_path()).unwrap();
     let mut header = Vec::new();

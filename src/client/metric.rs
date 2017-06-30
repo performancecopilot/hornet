@@ -1,12 +1,17 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::Hasher;
+use std::collections::hash_map::{HashMap, DefaultHasher};
+use std::hash::{Hash, Hasher};
 use std::io;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::mem;
 
-const ITEM_BIT_LEN: usize = 10;
+use super::super::{
+    ITEM_BIT_LEN,
+    INDOM_BIT_LEN,
+    METRIC_NAME_MAX_LEN,
+    STRING_BLOCK_LEN
+};
 
 pub (super) enum MTCode {
     I32 = 0,
@@ -208,7 +213,7 @@ pub struct Metric<T> {
 
 lazy_static! {
     static ref SCRATCH_VIEW: MmapViewSync = {
-        Mmap::anonymous(super::STRING_BLOCK_LEN as usize, Protection::ReadWrite).unwrap()
+        Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite).unwrap()
             .into_view_sync()
     };
 }
@@ -228,14 +233,14 @@ impl<T: MetricType + Clone> Metric<T> {
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        if name.len() >= super::METRIC_NAME_MAX_LEN as usize {
-            return Err(format!("name longer than {} bytes", super::METRIC_NAME_MAX_LEN - 1));
+        if name.len() >= METRIC_NAME_MAX_LEN as usize {
+            return Err(format!("name longer than {} bytes", METRIC_NAME_MAX_LEN - 1));
         }
-        if shorthelp_text.len() >= super::STRING_BLOCK_LEN as usize {
-            return Err(format!("short help text longer than {} bytes", super::STRING_BLOCK_LEN - 1));
+        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
-        if longhelp_text.len() >= super::STRING_BLOCK_LEN as usize {
-            return Err(format!("long help text longer than {} bytes", super::STRING_BLOCK_LEN - 1));
+        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
 
         let mut hasher = DefaultHasher::new();
@@ -286,9 +291,168 @@ impl<T: MetricType + Clone> Metric<T> {
         self.mmap_view = mmap_view;
     }
 
-    pub (super) fn write_val(&self, cursor: &mut Cursor<&mut [u8]>) -> io::Result<()> {
-        self.val.write_to_writer(cursor)
+    pub (super) fn write_val<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.val.write_to_writer(writer)
     }
+}
+
+pub struct InstanceMetric<T> {
+    pub (super) metrics: HashMap<String, Metric<T>>,
+    sem: Semantics,
+    unit: Unit,
+    indom: u32,
+    shorthelp: String,
+    longhelp: String,
+}
+
+impl<T: MetricType + Clone> InstanceMetric<T> {
+    pub fn new(
+        sem: Semantics,
+        unit: Unit,
+        shorthelp_text: &str,
+        longhelp_text: &str) -> Result<InstanceMetricBuilder<T>, String> {
+        InstanceMetricBuilder::new(sem, unit, shorthelp_text, longhelp_text)
+    }
+
+    pub fn indom(&self) -> u32 {
+        self.indom
+    }
+
+    pub fn instance_count(&self) -> u32 {
+        self.metrics.len() as u32
+    }
+
+    pub fn has_instance(&self, instance: &str) -> bool {
+        self.metrics.contains_key(instance)
+    }
+
+    pub fn val(&self, instance: &str) -> Option<T> {
+        self.metrics.get(instance).map(|m| m.val())
+    }
+
+    pub fn set_val(&mut self, instance: &str, val: T) -> Option<io::Result<()>>  {
+        self.metrics.get_mut(instance)
+            .map(|m| m.set_val(val))
+    }
+
+    pub fn shorthelp(&self) -> &str { &self.shorthelp }
+    pub fn longhelp(&self) -> &str { &self.longhelp }
+
+    pub (super) fn instance_id(instance: &str) -> u32 {
+        let mut hasher = DefaultHasher::new();
+        hasher.write(instance.as_bytes());
+        hasher.finish() as u32
+    }
+}
+
+pub struct InstanceMetricBuilder<T> {
+    instance_metric: InstanceMetric<T>,
+    running_hasher: DefaultHasher
+}
+
+impl<T: MetricType + Clone> InstanceMetricBuilder<T> {
+    pub fn new(
+        sem: Semantics,
+        unit: Unit,
+        shorthelp_text: &str,
+        longhelp_text: &str) -> Result<Self, String>  {
+
+        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+        }
+        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+        }
+
+        Ok(InstanceMetricBuilder {
+            instance_metric: InstanceMetric {
+                metrics: HashMap::new(),
+                sem: sem,
+                unit: unit,
+                shorthelp: shorthelp_text.to_owned(),
+                longhelp: longhelp_text.to_owned(),
+                indom: 0
+            },
+            running_hasher: DefaultHasher::new()
+        })
+    }
+
+    pub fn instance(
+        mut self,
+        instance: &str,
+        init_val: T,
+        shorthelp_text: &str,
+        longhelp_text: &str) -> Result<Self, String> {
+
+        { // this block ensures that `im` goes out of scope before we return Ok(self)
+
+            let mut im = &mut self.instance_metric;
+            instance.hash(&mut self.running_hasher);
+            im.indom = (self.running_hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1);
+
+            let metric = Metric::new(
+                &instance,
+                init_val,
+                im.sem,
+                im.unit,
+                shorthelp_text,
+                longhelp_text
+            )?;
+            im.metrics.insert(String::from(instance), metric);
+
+            for m in im.metrics.values_mut() {
+                m.indom = im.indom;
+            }
+
+        }
+
+        Ok(self)
+    }
+
+    pub fn metric(self) -> InstanceMetric<T> {
+        self.instance_metric
+    }
+}
+
+#[test]
+fn test_instance_metrics() {
+    use super::Client;
+
+    let mut cache = InstanceMetric::new(
+        Semantics::Discrete,
+        Unit::new().space(Space::KByte, 1).unwrap(),
+        "Cache sizes",
+        "Sizes of L1, L2 and L3 cache"
+    ).unwrap()
+        .instance("L1", 32, "", "").unwrap()
+        .instance("L2", 256, "", "").unwrap()
+        .instance("L3", 4096, "", "").unwrap()
+        .metric();
+
+    assert!(cache.has_instance("L1"));
+    assert!(!cache.has_instance("L4"));
+
+    assert_eq!(cache.val("L2").unwrap(), 256);
+    assert!(cache.val("L5").is_none());
+
+    let mut cpu = Metric::new(
+        "cpu",
+        String::from("kabylake"),
+        Semantics::Discrete,
+        Unit::new(),
+        "CPU family", "",
+    ).unwrap();
+
+    Client::new("system").unwrap()
+        .begin(1, 3, 1).unwrap()
+        .register_instance_metric(&mut cache).unwrap()
+        .register_metric(&mut cpu).unwrap()
+        .export().unwrap();
+
+    assert!(cache.set_val("L3", 8192).is_some());
+    assert_eq!(cache.val("L3").unwrap(), 8192);
+
+    assert!(cache.set_val("L4", 16384).is_none());
 }
 
 #[test]
@@ -332,7 +496,7 @@ fn test_invalid_metric_strings() {
     use rand::{thread_rng, Rng};
 
     let invalid_name: String = thread_rng().gen_ascii_chars()
-        .take(super::METRIC_NAME_MAX_LEN as usize).collect();
+        .take(METRIC_NAME_MAX_LEN as usize).collect();
     let m1 = Metric::new(
         &invalid_name,
         0, Semantics::Discrete, Unit::new(), "", "",
@@ -340,7 +504,7 @@ fn test_invalid_metric_strings() {
     assert!(m1.is_err());
 
     let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
-        .take(super::STRING_BLOCK_LEN as usize).collect();
+        .take(STRING_BLOCK_LEN as usize).collect();
     let m2 = Metric::new(
         "", 0, Semantics::Discrete, Unit::new(),
         &invalid_shorthelp,
@@ -349,7 +513,7 @@ fn test_invalid_metric_strings() {
     assert!(m2.is_err());
 
     let invalid_longhelp: String = thread_rng().gen_ascii_chars()
-        .take(super::STRING_BLOCK_LEN as usize).collect();
+        .take(STRING_BLOCK_LEN as usize).collect();
     let m3 = Metric::new(
         "", 0, Semantics::Discrete, Unit::new(), "",
         &invalid_longhelp,
@@ -368,17 +532,17 @@ fn test_random_numeric_metrics() {
     let n_metrics = thread_rng().gen::<u8>() % 20;
 
     let mut client = Client::new("numeric_metrics").unwrap();
-    client.begin(n_metrics as u64).unwrap();
+    client.begin(0, 0, n_metrics as u64).unwrap();
     
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
-            .take(super::METRIC_NAME_MAX_LEN as usize - 1).collect();
+            .take(METRIC_NAME_MAX_LEN as usize - 1).collect();
 
         let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+            .take(STRING_BLOCK_LEN as usize - 1).collect();
 
         let rnd_longhelp: String = thread_rng().gen_ascii_chars()
-            .take(super::STRING_BLOCK_LEN as usize - 1).collect();
+            .take(STRING_BLOCK_LEN as usize - 1).collect();
 
         let rnd_val1 = thread_rng().gen::<u32>();
 
@@ -453,7 +617,7 @@ fn test_simple_metrics() {
     ).unwrap();
 
     Client::new("physical_metrics").unwrap()
-        .begin(3).unwrap()
+        .begin(0, 0, 3).unwrap()
         .register_metric(&mut freq).unwrap()
         .register_metric(&mut color).unwrap()
         .register_metric(&mut photons).unwrap()
