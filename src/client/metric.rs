@@ -1,6 +1,7 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
-use std::collections::hash_map::{HashMap, DefaultHasher};
+use std::collections::HashSet;
+use std::collections::hash_map::{DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::Write;
@@ -296,26 +297,78 @@ impl<T: MetricType + Clone> Metric<T> {
     }
 }
 
-pub struct InstanceMetric<T> {
-    pub (super) metrics: HashMap<String, Metric<T>>,
-    sem: Semantics,
-    unit: Unit,
-    indom: u32,
+#[derive(Clone)]
+pub struct Indom {
+    pub (super) instances: HashSet<String>,
+    pub (super) id: u32,
     shorthelp: String,
-    longhelp: String,
+    longhelp: String
+}
+
+impl Indom {
+    pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Self {
+        let mut hasher = DefaultHasher::new();
+        instances.hash(&mut hasher);
+
+        Indom {
+            instances: instances.into_iter().map(|inst| inst.to_string()).collect(),
+            id: (hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1),
+            shorthelp: shorthelp_text.to_owned(),
+            longhelp: longhelp_text.to_owned()
+        }
+    }
+
+    pub fn instance_count(&self) -> u32 {
+        self.instances.len() as u32
+    }
+
+    pub fn has_instance(&self, instance: &str) -> bool {
+        self.instances.contains(instance)
+    }
+
+    pub fn shorthelp(&self) -> &str { &self.shorthelp }
+    pub fn longhelp(&self) -> &str { &self.longhelp }
+
+    pub (super) fn instance_id(instance: &str) -> u32 {
+        let mut hasher = DefaultHasher::new();
+        instance.hash(&mut hasher);
+        hasher.finish() as u32
+    }
+}
+
+pub struct InstanceMetric<T> {
+    pub (super) indom: Indom,
+    pub (super) metrics: HashMap<String, Metric<T>>,
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
     pub fn new(
+        indom: &Indom,
+        name: &str,
+        init_val: T,
         sem: Semantics,
         unit: Unit,
         shorthelp_text: &str,
-        longhelp_text: &str) -> Result<InstanceMetricBuilder<T>, String> {
-        InstanceMetricBuilder::new(sem, unit, shorthelp_text, longhelp_text)
-    }
+        longhelp_text: &str) -> Result<Self, String> {
 
-    pub fn indom(&self) -> u32 {
-        self.indom
+        let mut metrics = HashMap::new();
+        for inst in &indom.instances {
+            let mut metric = Metric::new(
+                &name,
+                init_val.clone(),
+                sem,
+                unit,
+                shorthelp_text,
+                longhelp_text
+            )?;
+            metric.indom = indom.id;
+            metrics.insert(inst.to_owned(), metric);
+        }
+        
+        Ok(InstanceMetric {
+            indom: indom.clone(),
+            metrics: metrics
+        })
     }
 
     pub fn instance_count(&self) -> u32 {
@@ -334,106 +387,33 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         self.metrics.get_mut(instance)
             .map(|m| m.set_val(val))
     }
-
-    pub fn shorthelp(&self) -> &str { &self.shorthelp }
-    pub fn longhelp(&self) -> &str { &self.longhelp }
-
-    pub (super) fn instance_id(instance: &str) -> u32 {
-        let mut hasher = DefaultHasher::new();
-        hasher.write(instance.as_bytes());
-        hasher.finish() as u32
-    }
-}
-
-pub struct InstanceMetricBuilder<T> {
-    instance_metric: InstanceMetric<T>,
-    running_hasher: DefaultHasher
-}
-
-impl<T: MetricType + Clone> InstanceMetricBuilder<T> {
-    pub fn new(
-        sem: Semantics,
-        unit: Unit,
-        shorthelp_text: &str,
-        longhelp_text: &str) -> Result<Self, String>  {
-
-        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
-        }
-        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
-        }
-
-        Ok(InstanceMetricBuilder {
-            instance_metric: InstanceMetric {
-                metrics: HashMap::new(),
-                sem: sem,
-                unit: unit,
-                shorthelp: shorthelp_text.to_owned(),
-                longhelp: longhelp_text.to_owned(),
-                indom: 0
-            },
-            running_hasher: DefaultHasher::new()
-        })
-    }
-
-    pub fn instance(
-        mut self,
-        instance: &str,
-        init_val: T,
-        shorthelp_text: &str,
-        longhelp_text: &str) -> Result<Self, String> {
-
-        { // this block ensures that `im` goes out of scope before we return Ok(self)
-
-            let mut im = &mut self.instance_metric;
-            instance.hash(&mut self.running_hasher);
-            im.indom = (self.running_hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1);
-
-            let metric = Metric::new(
-                &instance,
-                init_val,
-                im.sem,
-                im.unit,
-                shorthelp_text,
-                longhelp_text
-            )?;
-            im.metrics.insert(String::from(instance), metric);
-
-            for m in im.metrics.values_mut() {
-                m.indom = im.indom;
-            }
-
-        }
-
-        Ok(self)
-    }
-
-    pub fn metric(self) -> InstanceMetric<T> {
-        self.instance_metric
-    }
 }
 
 #[test]
 fn test_instance_metrics() {
     use super::Client;
 
-    let mut cache = InstanceMetric::new(
+    let caches = Indom::new(
+        &["L1", "L2", "L3"],
+        "Caches",
+        "Different levels of CPU caches"
+    );
+
+    let mut cache_sizes = InstanceMetric::new(
+        &caches,
+        "cache.size",
+        0,
         Semantics::Discrete,
         Unit::new().space(Space::KByte, 1).unwrap(),
         "Cache sizes",
-        "Sizes of L1, L2 and L3 cache"
-    ).unwrap()
-        .instance("L1", 32, "", "").unwrap()
-        .instance("L2", 256, "", "").unwrap()
-        .instance("L3", 4096, "", "").unwrap()
-        .metric();
+        "Sizes of different CPU caches"
+    ).unwrap();
 
-    assert!(cache.has_instance("L1"));
-    assert!(!cache.has_instance("L4"));
+    assert!(cache_sizes.has_instance("L1"));
+    assert!(!cache_sizes.has_instance("L4"));
 
-    assert_eq!(cache.val("L2").unwrap(), 256);
-    assert!(cache.val("L5").is_none());
+    assert_eq!(cache_sizes.val("L2").unwrap(), 0);
+    assert!(cache_sizes.val("L5").is_none());
 
     let mut cpu = Metric::new(
         "cpu",
@@ -444,15 +424,15 @@ fn test_instance_metrics() {
     ).unwrap();
 
     Client::new("system").unwrap()
-        .begin(1, 3, 1).unwrap()
-        .register_instance_metric(&mut cache).unwrap()
+        .begin(1, 3, 4).unwrap()
+        .register_instance_metric(&mut cache_sizes).unwrap()
         .register_metric(&mut cpu).unwrap()
         .export().unwrap();
 
-    assert!(cache.set_val("L3", 8192).is_some());
-    assert_eq!(cache.val("L3").unwrap(), 8192);
+    assert!(cache_sizes.set_val("L3", 8192).is_some());
+    assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
 
-    assert!(cache.set_val("L4", 16384).is_none());
+    assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
 
 #[test]

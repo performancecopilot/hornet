@@ -1,6 +1,7 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use regex::bytes::Regex;
+use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fs;
@@ -28,7 +29,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{InstanceMetric, Metric, MetricType, MTCode};
+use self::metric::{Indom, InstanceMetric, Metric, MetricType, MTCode};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -167,7 +168,7 @@ struct MMVWriterInfo {
     n_indoms: u64,
     n_instances: u64,
     n_metrics: u64,
-    n_metric_blks: u64, // n_instances + n_metrics
+    n_metric_blks: u64, // n_metrics
     n_strings: u64,
     n_toc: u64,
 
@@ -186,7 +187,10 @@ struct MMVWriterInfo {
     // running indexes of registered *things*
     indom_idx: u64,
     instance_idx: u64,
-    metric_blk_idx: u64
+    metric_blk_idx: u64,
+
+    // caches
+    indom_cache: HashMap<u32, Vec<u64>>
 }
 
 impl MMVWriterInfo {
@@ -211,7 +215,8 @@ impl MMVWriterInfo {
             n_strings_off: 0,
             string_toc_off: 0,
             n_toc: 0,
-            n_toc_off: 0
+            n_toc_off: 0,
+            indom_cache: HashMap::new()
         }
     }
 }
@@ -256,7 +261,7 @@ impl Client {
             self.wi.n_instances = n_instances;
             self.wi.n_toc += 2; // indom + instance
         }
-        self.wi.n_metric_blks = self.wi.n_metrics + self.wi.n_instances;
+        self.wi.n_metric_blks = self.wi.n_metrics;
 
         let hdr_toc_len =
             HDR_LEN +
@@ -420,51 +425,63 @@ impl Client {
 
     pub fn register_instance_metric<T: MetricType + Clone>(&mut self, im: &mut InstanceMetric<T>) -> io::Result<&mut Client> {
 
-        // write metric, value, string blocks
         let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
         let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
-        let indom_off = self.wi.indom_sec_off + INDOM_BLOCK_LEN*self.wi.indom_idx;
-        c.set_position(indom_off);
+        // write each indom and it's instances only once
+        let indom = &im.indom;
+        if !self.wi.indom_cache.contains_key(&indom.id) {
 
-        // indom
-        c.write_u32::<Endian>(im.indom())?;
-        // number of instances
-        c.write_u32::<Endian>(im.instance_count())?;
-        // offset to instances
-        let mut instance_blk_off = self.wi.instance_sec_off + INSTANCE_BLOCK_LEN*self.wi.instance_idx;
-        c.write_u64::<Endian>(instance_blk_off)?;
-        // short help
-        if im.shorthelp().len() > 0 {
-            let short_help_off = self.write_mmv_string(&mut c, im.shorthelp())?;
-            c.write_u64::<Endian>(short_help_off)?;
+            // write indom block
+            let indom_off = self.wi.indom_sec_off + INDOM_BLOCK_LEN*self.wi.indom_idx;
+            c.set_position(indom_off);
+            // indom id
+            c.write_u32::<Endian>(indom.id)?;
+            // number of instances
+            c.write_u32::<Endian>(indom.instance_count())?;
+            // offset to instances
+            let mut instance_blk_off = self.wi.instance_sec_off + INSTANCE_BLOCK_LEN*self.wi.instance_idx;
+            c.write_u64::<Endian>(instance_blk_off)?;
+            // short help
+            if indom.shorthelp().len() > 0 {
+                let short_help_off = self.write_mmv_string(&mut c, indom.shorthelp())?;
+                c.write_u64::<Endian>(short_help_off)?;
+            }
+            // long help
+            if indom.longhelp().len() > 0 {
+                let long_help_off = self.write_mmv_string(&mut c, indom.longhelp())?;
+                c.write_u64::<Endian>(long_help_off)?;
+            }
+
+            // write instances and record their offsets
+            let mut instance_blk_offs = Vec::with_capacity(indom.instances.len());
+            for instance in &indom.instances {
+                c.set_position(instance_blk_off);
+
+                // indom offset
+                c.write_u64::<Endian>(indom_off)?;
+                // zero pad
+                c.write_u32::<Endian>(0)?;
+                // instance id
+                c.write_u32::<Endian>(Indom::instance_id(&instance))?;
+                // instance
+                c.write_all(instance.as_bytes())?;
+                c.write_all(&[0])?;
+
+                instance_blk_offs.push(instance_blk_off);
+                instance_blk_off += INSTANCE_BLOCK_LEN;
+            }
+
+            self.wi.instance_idx += im.metrics.len() as u64;
+            self.wi.indom_idx += 1;
+
+            self.wi.indom_cache.insert(indom.id, instance_blk_offs);
         }
-        // long help
-        if im.longhelp().len() > 0 {
-            let long_help_off = self.write_mmv_string(&mut c, im.longhelp())?;
-            c.write_u64::<Endian>(long_help_off)?;
-        }
 
-        for (instance, metric) in &mut im.metrics {
-            c.set_position(instance_blk_off);
-
-            // indom offset
-            c.write_u64::<Endian>(indom_off)?;
-            // zero pad
-            c.write_u32::<Endian>(0)?;
-            // instance id
-            c.write_u32::<Endian>(InstanceMetric::<T>::instance_id(&instance))?;
-            // instance
-            c.write_all(instance.as_bytes())?;
-            c.write_all(&[0])?;
-
+        let instance_blk_offs = self.wi.indom_cache.get(&indom.id).unwrap().clone();
+        for ((_, metric), instance_blk_off) in im.metrics.iter_mut().zip(instance_blk_offs) {
             self.__register_metric(metric, instance_blk_off)?;
-
-            instance_blk_off += INSTANCE_BLOCK_LEN;
         }
-
-        self.wi.instance_idx += im.metrics.len() as u64;
-        self.wi.indom_idx += 1;
 
         Ok(self)
     }
