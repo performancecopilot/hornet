@@ -190,7 +190,8 @@ struct MMVWriterInfo {
     metric_blk_idx: u64,
 
     // caches
-    indom_cache: HashMap<u32, Vec<u64>>
+    indom_cache: HashMap<u32, Vec<u64>>, // (indom_id, offsets to it's instances)
+    string_cache: HashMap<String, u64> // (string, offset to it)
 }
 
 impl MMVWriterInfo {
@@ -216,7 +217,8 @@ impl MMVWriterInfo {
             string_toc_off: 0,
             n_toc: 0,
             n_toc_off: 0,
-            indom_cache: HashMap::new()
+            indom_cache: HashMap::new(),
+            string_cache: HashMap::new()
         }
     }
 }
@@ -444,12 +446,12 @@ impl Client {
             c.write_u64::<Endian>(instance_blk_off)?;
             // short help
             if indom.shorthelp().len() > 0 {
-                let short_help_off = self.write_mmv_string(&mut c, indom.shorthelp())?;
+                let short_help_off = self.write_mmv_string(&mut c, indom.shorthelp(), false)?;
                 c.write_u64::<Endian>(short_help_off)?;
             }
             // long help
             if indom.longhelp().len() > 0 {
-                let long_help_off = self.write_mmv_string(&mut c, indom.longhelp())?;
+                let long_help_off = self.write_mmv_string(&mut c, indom.longhelp(), false)?;
                 c.write_u64::<Endian>(long_help_off)?;
             }
 
@@ -522,12 +524,12 @@ impl Client {
         c.write_u32::<Endian>(0)?;
         // short help
         if m.shorthelp().len() > 0 {
-            let short_help_off = self.write_mmv_string(&mut c, m.shorthelp())?;
+            let short_help_off = self.write_mmv_string(&mut c, m.shorthelp(), false)?;
             c.write_u64::<Endian>(short_help_off)?;
         }
         // long help
         if m.longhelp().len() > 0 {
-            let long_help_off = self.write_mmv_string(&mut c, m.longhelp())?;
+            let long_help_off = self.write_mmv_string(&mut c, m.longhelp(), false)?;
             c.write_u64::<Endian>(long_help_off)?;
         }
 
@@ -548,7 +550,7 @@ impl Client {
             m.write_val(&mut (&mut str_buf as &mut [u8]))?;
 
             let str_val = unsafe { str::from_utf8_unchecked(&str_buf) };
-            let string_val_off = self.write_mmv_string(&mut c, str_val)?;
+            let string_val_off = self.write_mmv_string(&mut c, str_val, true)?;
             c.write_u64::<Endian>(string_val_off)?;
 
             value_offset = string_val_off as usize;
@@ -585,7 +587,7 @@ impl Client {
     // leaves the cursor in the original position it was at when passed
     //
     // when writing first string in MMV, also writes the string TOC block
-    fn write_mmv_string(&mut self, c: &mut Cursor<&mut [u8]>, string: &str) -> io::Result<u64> {
+    fn write_mmv_string(&mut self, c: &mut Cursor<&mut [u8]>, string: &str, is_value: bool) -> io::Result<u64> {
         let orig_pos = c.position();
 
         if self.wi.n_strings == 0 {
@@ -605,8 +607,17 @@ impl Client {
             c.write_u64::<Endian>(self.wi.string_sec_off)?;
         }
 
-        // write string in string section
         let string_block_off = self.wi.string_sec_off + STRING_BLOCK_LEN*self.wi.n_strings;
+
+        // only use cache if the string is not a value string
+        if !is_value {
+            if let Some(cached_offset) = self.wi.string_cache.get(string).clone() {
+                return Ok(*cached_offset);
+            }
+            self.wi.string_cache.insert(string.to_owned(), string_block_off);
+        }
+
+        // write string in string section
         c.set_position(string_block_off);
         c.write_all(string.as_bytes())?;
         c.write_all(&[0])?;
