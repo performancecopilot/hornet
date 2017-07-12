@@ -361,9 +361,13 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         longhelp_text: &str) -> Result<Self, String> {
 
         let mut metrics = HashMap::new();
-        for inst in &indom.instances {
+
+        let mut metric_name = name.to_owned();
+        metric_name.push('.');
+        for instance in &indom.instances {
+            metric_name.push_str(instance);
             let mut metric = Metric::new(
-                &name,
+                &metric_name,
                 init_val.clone(),
                 sem,
                 unit,
@@ -371,7 +375,9 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
                 longhelp_text
             )?;
             metric.indom = indom.id;
-            metrics.insert(inst.to_owned(), metric);
+            metrics.insert(instance.to_owned(), metric);
+
+            metric_name.truncate(name.len() + 1);
         }
         
         Ok(InstanceMetric {
