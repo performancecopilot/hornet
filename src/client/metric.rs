@@ -298,6 +298,7 @@ impl<T: MetricType + Clone> Metric<T> {
 }
 
 #[derive(Clone)]
+/// An instance domain is a set of instances
 pub struct Indom {
     pub (super) instances: HashSet<String>,
     pub (super) id: u32,
@@ -306,6 +307,7 @@ pub struct Indom {
 }
 
 impl Indom {
+    /// Creates a new instance domain with given instances, and short and long help text
     pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Self {
         let mut hasher = DefaultHasher::new();
         instances.hash(&mut hasher);
@@ -318,10 +320,12 @@ impl Indom {
         }
     }
 
+    /// Returns the number of instances in the domain
     pub fn instance_count(&self) -> u32 {
         self.instances.len() as u32
     }
 
+    /// Checks if given instance is in the domain
     pub fn has_instance(&self, instance: &str) -> bool {
         self.instances.contains(instance)
     }
@@ -336,12 +340,17 @@ impl Indom {
     }
 }
 
+/// An instance metric is a set of related metrics with same
+/// type, semantics and unit. Many instance metrics can share
+/// the same set of instances, i.e., instance domain.
 pub struct InstanceMetric<T> {
     pub (super) indom: Indom,
     pub (super) metrics: HashMap<String, Metric<T>>,
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
+    /// Creates an instance metric with given name, initial value,
+    /// semantics, unit, and short and long help text
     pub fn new(
         indom: &Indom,
         name: &str,
@@ -371,18 +380,23 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         })
     }
 
+    /// Returns the number of instances that're part of the metric
     pub fn instance_count(&self) -> u32 {
         self.metrics.len() as u32
     }
 
+    /// Check if given instance is part of the metric
     pub fn has_instance(&self, instance: &str) -> bool {
         self.metrics.contains_key(instance)
     }
 
+    /// Returns the value of the given instance
     pub fn val(&self, instance: &str) -> Option<T> {
         self.metrics.get(instance).map(|m| m.val())
     }
 
+    /// Sets the value of the given instance. If the instance isn't
+    /// found, returns `None`.
     pub fn set_val(&mut self, instance: &str, val: T) -> Option<io::Result<()>>  {
         self.metrics.get_mut(instance)
             .map(|m| m.set_val(val))
