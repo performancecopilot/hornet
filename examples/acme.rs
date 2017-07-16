@@ -53,7 +53,7 @@ fn main() {
     /* create a client, register the metrics with it, and export them */
 
     Client::new("acme").unwrap()
-        .begin(1, 3, 9).unwrap()
+        .begin_all(1, 3, 3, 0).unwrap()
         .register_instance_metric(&mut counts).unwrap()
         .register_instance_metric(&mut times).unwrap()
         .register_instance_metric(&mut queue_times).unwrap()

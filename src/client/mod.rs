@@ -167,8 +167,10 @@ struct MMVWriterInfo {
     // counts of various *things*
     n_indoms: u64,
     n_instances: u64,
+    n_instance_metrics: u64,
     n_metrics: u64,
-    n_metric_blks: u64, // n_metrics
+    n_metric_blks: u64, // n_metrics + n_instance_metrics
+    n_value_blks: u64,
     n_strings: u64,
     n_toc: u64,
 
@@ -188,6 +190,7 @@ struct MMVWriterInfo {
     indom_idx: u64,
     instance_idx: u64,
     metric_blk_idx: u64,
+    value_blk_idx: u64,
 
     // caches
     indom_cache: HashMap<u32, Vec<u64>>, // (indom_id, offsets to it's instances)
@@ -200,8 +203,10 @@ impl MMVWriterInfo {
             mmap_view: None,
             n_indoms: 0,
             n_instances: 0,
+            n_instance_metrics: 0,
             n_metrics: 0,
             n_metric_blks: 0,
+            n_value_blks: 0,
             n_strings: 0,
             gen: 0,
             gen2off: 0,
@@ -209,6 +214,7 @@ impl MMVWriterInfo {
             instance_sec_off: 0,
             metric_sec_off: 0,
             value_sec_off: 0,
+            value_blk_idx: 0,
             string_sec_off: 0,
             metric_blk_idx: 0,
             instance_idx: 0,
@@ -254,16 +260,28 @@ impl Client {
         })
     }
 
-    pub fn begin(&mut self, n_indoms: u64, n_instances: u64, n_metrics: u64) -> io::Result<&mut Client> {
+    /// Begins registration of singleton metrics only
+    pub fn begin_metrics(&mut self, n_metrics: u64) -> io::Result<&mut Client> {
+        self.begin_all(0, 0, 0, n_metrics)
+    }
+
+    /// Begins registration of singleton and instance metrics
+    /// - `n_indoms` is the number of unique indoms
+    /// - `n_instances` is the number of unique instances
+    pub fn begin_all(&mut self, n_indoms: u64, n_instances: u64, n_instance_metrics: u64, n_metrics: u64) -> io::Result<&mut Client> {
         self.wi.n_metrics = n_metrics;
         self.wi.n_toc = 2; // metric + value
 
-        if n_indoms > 0 && n_instances > 0 {
+        if n_indoms > 0 && n_instances > 0 && n_instance_metrics > 0 {
             self.wi.n_indoms = n_indoms;
             self.wi.n_instances = n_instances;
+            self.wi.n_instance_metrics = n_instance_metrics;
             self.wi.n_toc += 2; // indom + instance
         }
-        self.wi.n_metric_blks = self.wi.n_metrics;
+        self.wi.n_metric_blks = self.wi.n_metrics + self.wi.n_instance_metrics;
+        self.wi.n_value_blks =
+             self.wi.n_metrics +
+             self.wi.n_instances * self.wi.n_instance_metrics; // FIXME: very wasteful allocation in some cases
 
         let hdr_toc_len =
             HDR_LEN +
@@ -274,9 +292,9 @@ impl Client {
             self.wi.n_instances*INSTANCE_BLOCK_LEN +
             self.wi.n_metric_blks*(
                 METRIC_BLOCK_LEN +
-                VALUE_BLOCK_LEN +
                 MAX_STRINGS_PER_METRIC*STRING_BLOCK_LEN
-            )
+            ) +
+            self.wi.n_value_blks*VALUE_BLOCK_LEN
         ) as usize;
         
         let mut file = OpenOptions::new().read(true).write(true).create(true)
@@ -355,7 +373,7 @@ impl Client {
             self.wi.value_sec_off = self.wi.metric_sec_off + METRIC_BLOCK_LEN*self.wi.n_metric_blks;
             self.write_values_toc_block(&mut cur)?;
 
-            self.wi.string_sec_off = self.wi.value_sec_off + VALUE_BLOCK_LEN*self.wi.n_metric_blks;
+            self.wi.string_sec_off = self.wi.value_sec_off + VALUE_BLOCK_LEN*self.wi.n_value_blks;
             self.wi.string_toc_off = cur.position();
         }
 
@@ -416,17 +434,19 @@ impl Client {
         // section type
         c.write_u32::<Endian>(4)?;
         // no. of entries
-        c.write_u32::<Endian>(self.wi.n_metric_blks as u32)?;
+        c.write_u32::<Endian>(self.wi.n_value_blks as u32)?;
         // section offset
         c.write_u64::<Endian>(self.wi.value_sec_off)
     }
 
     pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>) -> io::Result<&mut Client> {
-        self.__register_metric(m, 0)
+        let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
+        let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+        self.register_metric_common(&mut c, m, true)?;
+        Ok(self)
     }
 
     pub fn register_instance_metric<T: MetricType + Clone>(&mut self, im: &mut InstanceMetric<T>) -> io::Result<&mut Client> {
-
         let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
         let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
@@ -474,31 +494,47 @@ impl Client {
                 instance_blk_off += INSTANCE_BLOCK_LEN;
             }
 
-            self.wi.instance_idx += im.metrics.len() as u64;
+            self.wi.instance_idx += im.vals.len() as u64;
             self.wi.indom_idx += 1;
 
             self.wi.indom_cache.insert(indom.id, instance_blk_offs);
         }
 
+        // write metric block
+        let metric_blk_off = self.register_metric_common(&mut c, &mut im.metric, false)?;
+
+        // write value blocks
         let instance_blk_offs = self.wi.indom_cache.get(&indom.id).unwrap().clone();
-        for ((_, metric), instance_blk_off) in im.metrics.iter_mut().zip(instance_blk_offs) {
-            self.__register_metric(metric, instance_blk_off)?;
+        for ((_, instance), instance_blk_off) in im.vals.iter_mut().zip(instance_blk_offs) {
+
+            let (value_offset, value_size) =
+                self.write_value_block(&mut c, &instance.val, metric_blk_off, instance_blk_off)?;
+
+            // set mmap_view for instance
+            let mmap_view = unsafe {
+                self.wi.mmap_view.as_mut().unwrap().clone()
+            };
+            let (_, value_mmap_view, _) =
+                three_way_split(mmap_view, value_offset, value_size)?;
+            instance.mmap_view = value_mmap_view;
         }
 
         Ok(self)
     }
 
-    fn __register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>, instance_blk_off: u64) -> io::Result<&mut Client> {
+    // writes `m` at end of metric section, and returns the offset `m` was written
+    //
+    // if the `m` is part of an instance metric, pass `write_val` as false so that
+    // an extra value block isn't written
+    //
+    // leaves the cursor in the original position it was at when passed
+    pub fn register_metric_common<T: MetricType + Clone>(&mut self, mut c: &mut Cursor<&mut [u8]>,
+        m: &mut Metric<T>, write_val: bool) -> io::Result<u64> {
+
+        let orig_pos = c.position();
 
         // TODO: return custom error instead of panicing
         assert!(self.wi.metric_blk_idx < self.wi.n_metric_blks);
-
-        let (value_offset, value_size);
-
-        // write metric, value, string blocks
-
-        let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
-        let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
         let i = self.wi.metric_blk_idx;
 
@@ -533,10 +569,41 @@ impl Client {
             c.write_u64::<Endian>(long_help_off)?;
         }
 
-        // value block
-        let value_block_off = self.wi.value_sec_off + i*VALUE_BLOCK_LEN;
-        c.set_position(value_block_off);
-        if type_code == MTCode::String as u32 {
+        // write value block
+        if write_val {
+            let (value_offset, value_size) =
+                self.write_value_block(&mut c, &m.val, metric_blk_off, 0)?;
+
+            // set mmap_view for metric
+            let mmap_view = unsafe {
+                self.wi.mmap_view.as_mut().unwrap().clone()
+            };
+            let (_, value_mmap_view, _) =
+                three_way_split(mmap_view, value_offset, value_size)?;
+            m.mmap_view = value_mmap_view;
+        }
+
+        self.wi.metric_blk_idx += 1;
+
+        c.set_position(orig_pos);
+        Ok(metric_blk_off)
+    }
+
+    // writes `val` at end of value section, updates value count in value TOC,
+    // and returns the offset `val` was written at and it's size - (offset, size)
+    //
+    // leaves the cursor in the original position it was at when passed
+    fn write_value_block<T: MetricType + Clone>(&mut self, mut c: &mut Cursor<&mut [u8]>, val: &T,
+        metric_blk_off: u64, instance_blk_off: u64) -> io::Result<(usize, usize)> {
+
+        let orig_pos = c.position();
+
+        let value_blk_off = self.wi.value_sec_off + self.wi.value_blk_idx*VALUE_BLOCK_LEN;
+        self.wi.value_blk_idx += 1;
+        c.set_position(value_blk_off);
+
+        let (value_offset, value_size);
+        if val.type_code() == MTCode::String as u32 {
             // numeric value
             c.write_u64::<Endian>(0)?;
 
@@ -547,7 +614,7 @@ impl Client {
             // we perform an extra write of the string to a temp buffer so we
             // can pass that to write_mmv_string.
             let mut str_buf = [0u8; STRING_BLOCK_LEN as usize];
-            m.write_val(&mut (&mut str_buf as &mut [u8]))?;
+            val.write_to_writer(&mut (&mut str_buf as &mut [u8]))?;
 
             let str_val = unsafe { str::from_utf8_unchecked(&str_buf) };
             let string_val_off = self.write_mmv_string(&mut c, str_val, true)?;
@@ -560,7 +627,7 @@ impl Client {
             value_size = NUMERIC_VALUE_SIZE;
 
             // numeric value
-            m.write_val(&mut c)?;
+            val.write_to_writer(&mut c)?;
             // string offset
             c.write_u64::<Endian>(0)?;
         }
@@ -568,17 +635,9 @@ impl Client {
         c.write_u64::<Endian>(metric_blk_off)?;
         // offset to instance block
         c.write_u64::<Endian>(instance_blk_off)?;
-
-        // set mmap_view for metric
-        let mmap_view = unsafe {
-            self.wi.mmap_view.as_mut().unwrap().clone()
-        };
-        let (_, value_mmap_view, _) =
-            three_way_split(mmap_view, value_offset, value_size)?;
-        m.set_mmap_view(value_mmap_view);
-
-        self.wi.metric_blk_idx += 1;
-        Ok(self)
+        
+        c.set_position(orig_pos);
+        Ok((value_offset, value_size))
     }
 
     // writes `string` at end of string section, updates string count in string TOC,
@@ -673,7 +732,7 @@ fn test_mmv_header() {
     let cluster_id = thread_rng().gen::<u32>();
     let flags = PROCESS | SENTINEL;
     let mut client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
-    client.begin(0, 0, 0).unwrap().export().unwrap();
+    client.begin_metrics(0).unwrap().export().unwrap();
 
     let mut file = File::open(client.mmv_path()).unwrap();
     let mut header = Vec::new();

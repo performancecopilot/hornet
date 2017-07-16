@@ -208,8 +208,8 @@ pub struct Metric<T> {
     unit: u32,
     shorthelp: String,
     longhelp: String,
-    val: T,
-    mmap_view: MmapViewSync
+    pub (super) val: T,
+    pub (super) mmap_view: MmapViewSync
 }
 
 lazy_static! {
@@ -287,14 +287,6 @@ impl<T: MetricType + Clone> Metric<T> {
     pub fn indom(&self) -> u32 { self.indom }
     pub fn shorthelp(&self) -> &str { &self.shorthelp }
     pub fn longhelp(&self) -> &str { &self.longhelp }
-
-    pub (super) fn set_mmap_view(&mut self, mmap_view: MmapViewSync) {
-        self.mmap_view = mmap_view;
-    }
-
-    pub (super) fn write_val<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.val.write_to_writer(writer)
-    }
 }
 
 #[derive(Clone)]
@@ -340,12 +332,18 @@ impl Indom {
     }
 }
 
+pub (super) struct Instance<T> {
+    pub (super) val: T,
+    pub (super) mmap_view: MmapViewSync
+}
+
 /// An instance metric is a set of related metrics with same
 /// type, semantics and unit. Many instance metrics can share
 /// the same set of instances, i.e., instance domain.
 pub struct InstanceMetric<T> {
     pub (super) indom: Indom,
-    pub (super) metrics: HashMap<String, Metric<T>>,
+    pub (super) vals: HashMap<String, Instance<T>>,
+    pub (super) metric: Metric<T>
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
@@ -360,53 +358,61 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         shorthelp_text: &str,
         longhelp_text: &str) -> Result<Self, String> {
 
-        let mut metrics = HashMap::new();
-
+        let mut vals = HashMap::with_capacity(indom.instances.len());
         let mut metric_name = name.to_owned();
         metric_name.push('.');
-        for instance in &indom.instances {
-            metric_name.push_str(instance);
-            let mut metric = Metric::new(
-                &metric_name,
-                init_val.clone(),
-                sem,
-                unit,
-                shorthelp_text,
-                longhelp_text
-            )?;
-            metric.indom = indom.id;
-            metrics.insert(instance.to_owned(), metric);
+        for instance_str in &indom.instances {
+            metric_name.push_str(instance_str);
+
+            let instance = Instance {
+                val: init_val.clone(),
+                mmap_view: unsafe { SCRATCH_VIEW.clone() }
+            };
+            vals.insert(instance_str.to_owned(), instance);
 
             metric_name.truncate(name.len() + 1);
         }
+
+        let mut metric = Metric::new(name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text)?;
+        metric.indom = indom.id;
         
         Ok(InstanceMetric {
             indom: indom.clone(),
-            metrics: metrics
+            vals: vals,
+            metric: metric
         })
     }
 
     /// Returns the number of instances that're part of the metric
     pub fn instance_count(&self) -> u32 {
-        self.metrics.len() as u32
+        self.vals.len() as u32
     }
 
     /// Check if given instance is part of the metric
     pub fn has_instance(&self, instance: &str) -> bool {
-        self.metrics.contains_key(instance)
+        self.vals.contains_key(instance)
     }
 
     /// Returns the value of the given instance
     pub fn val(&self, instance: &str) -> Option<T> {
-        self.metrics.get(instance).map(|m| m.val())
+        self.vals.get(instance).map(|i| i.val.clone())
     }
 
     /// Sets the value of the given instance. If the instance isn't
     /// found, returns `None`.
-    pub fn set_val(&mut self, instance: &str, val: T) -> Option<io::Result<()>>  {
-        self.metrics.get_mut(instance)
-            .map(|m| m.set_val(val))
+    pub fn set_val(&mut self, instance: &str, new_val: T) -> Option<io::Result<()>>  {
+        self.vals.get_mut(instance).map(|i| {
+            new_val.write_to_writer(unsafe { &mut i.mmap_view.as_mut_slice() })?;
+            i.val = new_val;
+            Ok(())
+        })
     }
+
+    pub fn name(&self) -> &str { &self.metric.name }
+    pub fn sem(&self) -> &Semantics { &self.metric.sem }
+    pub fn unit(&self) -> u32 { self.metric.unit }
+    pub fn shorthelp(&self) -> &str { &self.metric.shorthelp }
+    pub fn longhelp(&self) -> &str { &self.metric.longhelp }
 }
 
 #[test]
@@ -421,7 +427,7 @@ fn test_instance_metrics() {
 
     let mut cache_sizes = InstanceMetric::new(
         &caches,
-        "cache.size",
+        "cache_size",
         0,
         Semantics::Discrete,
         Unit::new().space(Space::KByte, 1).unwrap(),
@@ -444,14 +450,14 @@ fn test_instance_metrics() {
     ).unwrap();
 
     Client::new("system").unwrap()
-        .begin(1, 3, 4).unwrap()
+        .begin_all(1, 3, 1, 1).unwrap()
         .register_instance_metric(&mut cache_sizes).unwrap()
         .register_metric(&mut cpu).unwrap()
         .export().unwrap();
 
     assert!(cache_sizes.set_val("L3", 8192).is_some());
     assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
-
+    
     assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
 
@@ -532,7 +538,7 @@ fn test_random_numeric_metrics() {
     let n_metrics = thread_rng().gen::<u8>() % 20;
 
     let mut client = Client::new("numeric_metrics").unwrap();
-    client.begin(0, 0, n_metrics as u64).unwrap();
+    client.begin_metrics(n_metrics as u64).unwrap();
     
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
@@ -617,7 +623,7 @@ fn test_simple_metrics() {
     ).unwrap();
 
     Client::new("physical_metrics").unwrap()
-        .begin(0, 0, 3).unwrap()
+        .begin_metrics(3).unwrap()
         .register_metric(&mut freq).unwrap()
         .register_metric(&mut color).unwrap()
         .register_metric(&mut photons).unwrap()
