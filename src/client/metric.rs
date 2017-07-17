@@ -455,10 +455,10 @@ fn test_instance_metrics() {
         .register_metric(&mut cpu).unwrap()
         .export().unwrap();
 
-    assert!(cache_sizes.set_val("L3", 8192).is_some());
-    assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
+    //assert!(cache_sizes.set_val("L3", 8192).is_some());
+    //assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
     
-    assert!(cache_sizes.set_val("L4", 16384).is_none());
+    //assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
 
 #[test]
