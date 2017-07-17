@@ -23,7 +23,7 @@ use super::{
     STRING_BLOCK_LEN,
     NUMERIC_VALUE_SIZE,
     METRIC_NAME_MAX_LEN,
-    MAX_STRINGS_PER_METRIC,
+    MIN_STRINGS_PER_METRIC,
     INDOM_BLOCK_LEN,
     INSTANCE_BLOCK_LEN
 };
@@ -292,9 +292,12 @@ impl Client {
             self.wi.n_instances*INSTANCE_BLOCK_LEN +
             self.wi.n_metric_blks*(
                 METRIC_BLOCK_LEN +
-                MAX_STRINGS_PER_METRIC*STRING_BLOCK_LEN
+                MIN_STRINGS_PER_METRIC*STRING_BLOCK_LEN
             ) +
-            self.wi.n_value_blks*VALUE_BLOCK_LEN
+            self.wi.n_value_blks*(
+                VALUE_BLOCK_LEN +
+                STRING_BLOCK_LEN
+            )
         ) as usize;
         
         let mut file = OpenOptions::new().read(true).write(true).create(true)
