@@ -14,7 +14,7 @@ fn main() {
         &products,
         "Acme products",
         "Most popular products produced by the Acme Corporation"
-    );
+    ).unwrap();
     
     /* create three instance metrics */
 

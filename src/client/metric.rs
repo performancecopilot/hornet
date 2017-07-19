@@ -300,16 +300,28 @@ pub struct Indom {
 
 impl Indom {
     /// Creates a new instance domain with given instances, and short and long help text
-    pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Self {
+    pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         let mut hasher = DefaultHasher::new();
         instances.hash(&mut hasher);
 
-        Indom {
+        for instance in instances {
+            if instance.len() >= METRIC_NAME_MAX_LEN as usize {
+                return Err(format!("instance longer than {} bytes", METRIC_NAME_MAX_LEN - 1));
+            }
+        }
+        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+        }
+        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+        }
+
+        Ok(Indom {
             instances: instances.into_iter().map(|inst| inst.to_string()).collect(),
             id: (hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1),
             shorthelp: shorthelp_text.to_owned(),
             longhelp: longhelp_text.to_owned()
-        }
+        })
     }
 
     /// Returns the number of instances in the domain
@@ -423,7 +435,7 @@ fn test_instance_metrics() {
         &["L1", "L2", "L3"],
         "Caches",
         "Different levels of CPU caches"
-    );
+    ).unwrap();
 
     let mut cache_sizes = InstanceMetric::new(
         &caches,
@@ -455,10 +467,10 @@ fn test_instance_metrics() {
         .register_metric(&mut cpu).unwrap()
         .export().unwrap();
 
-    //assert!(cache_sizes.set_val("L3", 8192).is_some());
-    //assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
+    assert!(cache_sizes.set_val("L3", 8192).is_some());
+    assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
     
-    //assert!(cache_sizes.set_val("L4", 16384).is_none());
+    assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
 
 #[test]
