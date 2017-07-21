@@ -1,0 +1,20 @@
+Version    = 1
+Generated  = 1469590299
+TOC count  = 3
+Cluster    = 764
+Process    = 22340
+Flags      = 0x2
+
+TOC[0]: toc offset 40, metrics offset 88 (1 entries)
+  [1022/88] bat.names
+      type=String (0x6), sem=instant (0x3), pad=0x0
+      unit=1048576
+      indom=4294967295
+      (no shorttext)
+      (no longtext)
+ 
+TOC[1]: toc offset 56, values offset 192 (1 entries)
+  [1022/192] bat.names = ""
+ 
+TOC[2]: toc offset 72, strings offset 224 (1 entries)
+  [1/224] 

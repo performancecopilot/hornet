@@ -1,9 +1,12 @@
 use byteorder::ReadBytesExt;
+use std::collections::BTreeMap;
+use std::ffi::CStr;
 use std::fs::File;
 use std::io;
 use std::io::Cursor;
 use std::io::prelude::*;
 use std::path::Path;
+use std::str;
 
 const INDOM_TOC_CODE: u32 = 1;
 const INSTANCE_TOC_CODE: u32 = 2;
@@ -18,9 +21,11 @@ use super::{
     CLUSTER_ID_BIT_LEN
 };
 
+#[derive(Debug)]
 pub enum MMVDumpError {
     InvalidMMV(String),
-    Io(io::Error)
+    Io(io::Error),
+    Utf8(str::Utf8Error)
 }
 
 impl From<io::Error> for MMVDumpError {
@@ -29,65 +34,70 @@ impl From<io::Error> for MMVDumpError {
     }
 }
 
+impl From<str::Utf8Error> for MMVDumpError {
+    fn from(err: str::Utf8Error) -> MMVDumpError {
+        MMVDumpError::Utf8(err)
+    }
+}
+
 macro_rules! return_mmvdumperror (
-    ($err:expr) => (
-        return Err(MMVDumpError::InvalidMMV($err.to_owned()));
+    ($err:expr, $val:expr) => (
+        let mut err_str = $err.to_owned();
+        err_str.push_str(&format!(": {}", $val));
+        return Err(MMVDumpError::InvalidMMV(err_str));
     )
 );
 
 pub struct MMV {
-    header: Header,
-    metric_toc: TOC,
-    value_toc: TOC,
-    string_toc: Option<TOC>,
-    indom_toc: Option<TOC>,
-    instance_toc: Option<TOC>,
-    metric_blks: Vec<MetricBlk>,
-    value_blks: Vec<ValueBlk>,
-    string_blks: Vec<StringBlk>,
-    indom_blks: Vec<IndomBlk>,
-    instance_blks: Vec<InstanceBlk>
+    pub header: Header,
+    pub metric_toc: TOC,
+    pub value_toc: TOC,
+    pub string_toc: Option<TOC>,
+    pub indom_toc: Option<TOC>,
+    pub instance_toc: Option<TOC>,
+    pub metric_blks: BTreeMap<u64, MetricBlk>,
+    pub value_blks: BTreeMap<u64, ValueBlk>,
+    pub string_blks: BTreeMap<u64, StringBlk>,
+    pub indom_blks: BTreeMap<u64, IndomBlk>,
+    pub instance_blks: BTreeMap<u64, InstanceBlk>
 }
 
 pub struct Header {
-    _mmv_offset: u64,
-    magic: [u8; 4],
-    version: u32,
-    gen1: i64,
-    gen2: i64,
-    toc_count: u32,
-    flags: u32,
-    pid: i32,
-    cluster_id: u32,
+    pub magic: [u8; 4],
+    pub version: u32,
+    pub gen1: i64,
+    pub gen2: i64,
+    pub toc_count: u32,
+    pub flags: u32,
+    pub pid: i32,
+    pub cluster_id: u32,
 }
 
 impl Header {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
-
         let mut magic = [0; 4];
         magic[0] = c.read_u8()?;
         magic[1] = c.read_u8()?;
         magic[2] = c.read_u8()?;
         magic[3] = c.read_u8()?;
         if magic != [b'M', b'M', b'V', 0] {
-            return_mmvdumperror!("Invalid MMV");
+            return_mmvdumperror!("Invalid MMV", 0);
         }
 
         let version = c.read_u32::<Endian>()?;
-        if version != 1 || version != 2 {
-            return_mmvdumperror!("Invalid version number");
+        if version != 1 && version != 2 {
+            return_mmvdumperror!("Invalid version number", version);
         }
 
         let gen1 = c.read_i64::<Endian>()?;
         let gen2 = c.read_i64::<Endian>()?;
         if gen1 != gen2 {
-            return_mmvdumperror!("Generation timestamps don't match");
+            return_mmvdumperror!("Generation timestamps don't match", 0);
         } 
 
         let toc_count = c.read_u32::<Endian>()?;
         if toc_count > 5 || toc_count < 2 {
-            return_mmvdumperror!("Invalid TOC count");
+            return_mmvdumperror!("Invalid TOC count", toc_count);
         }
 
         let flags = c.read_u32::<Endian>()?;
@@ -95,11 +105,10 @@ impl Header {
 
         let cluster_id = c.read_u32::<Endian>()?;
         if (cluster_id >> (32 - CLUSTER_ID_BIT_LEN)) != 0 {
-            return_mmvdumperror!("Invalid cluster ID");
+            return_mmvdumperror!("Invalid cluster ID", cluster_id);
         }
 
         Ok(Header {
-            _mmv_offset: _mmv_offset,
             magic: magic,
             version: version,
             gen1: gen1,
@@ -113,30 +122,30 @@ impl Header {
 }
 
 pub struct TOC {
-    _mmv_offset: u64,
-    sec: u32,
-    entries: u32,
-    sec_offset: u64
+    pub _mmv_offset: u64,
+    pub sec: u32,
+    pub entries: u32,
+    pub sec_offset: u64
 }
 
 impl TOC {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
+        let mmv_offset = c.position();
 
         let sec = c.read_u32::<Endian>()?;
         if sec > 5 {
-            return_mmvdumperror!("Invalid TOC type");
+            return_mmvdumperror!("Invalid TOC type", sec);
         }
 
         let entries = c.read_u32::<Endian>()?;
 
         let sec_offset = c.read_u64::<Endian>()?;
         if sec_offset == 0 {
-            return_mmvdumperror!("Invalid section offset");
+            return_mmvdumperror!("Invalid section offset", sec_offset);
         }
 
         Ok(TOC {
-            _mmv_offset: _mmv_offset,
+            _mmv_offset: mmv_offset,
             sec: sec,
             entries: entries,
             sec_offset: sec_offset
@@ -145,24 +154,25 @@ impl TOC {
 }
 
 pub struct MetricBlk {
-    _mmv_offset: u64,
-    name: [u8; METRIC_NAME_MAX_LEN as usize],
-    item: u32,
-    typ: u32,
-    sem: u32,
-    unit: u32,
-    indom: u32,
-    pad: u32,
-    short_help_offset: u64,
-    long_help_offset: u64
+    pub name: String,
+    pub item: u32,
+    pub typ: u32,
+    pub sem: u32,
+    pub unit: u32,
+    pub indom: Option<u32>,
+    pub pad: u32,
+    pub short_help_offset: Option<u64>,
+    pub long_help_offset: Option<u64>
 }
 
 impl MetricBlk {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
-
-        let mut name = [0; METRIC_NAME_MAX_LEN as usize];
-        c.read_exact(&mut name)?;
+        let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+        c.read_exact(&mut name_bytes)?;
+        let cstr = unsafe {
+            CStr::from_ptr(name_bytes.as_ptr() as *const i8)
+        };
+        let name = cstr.to_str()?.to_owned();
 
         let item = c.read_u32::<Endian>()?;
         let typ = c.read_u32::<Endian>()?;
@@ -172,143 +182,132 @@ impl MetricBlk {
 
         let pad = c.read_u32::<Endian>()?;
         if pad != 0 {
-            return_mmvdumperror!("Invalid pad bytes");
+            return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
         let short_help_offset = c.read_u64::<Endian>()?;
-        if short_help_offset == 0 {
-            return_mmvdumperror!("Invalid short help offset");
-        }
-
         let long_help_offset = c.read_u64::<Endian>()?;
-        if long_help_offset == 0 {
-            return_mmvdumperror!("Invalid long help offset");
-        }
-
+        
         Ok(MetricBlk {
-            _mmv_offset: _mmv_offset,
             name: name,
             item: item,
             typ: typ,
             sem: sem,
             unit: unit,
-            indom: indom,
+            indom: {
+                if indom != 0 { Some(indom) }
+                else { None }
+            },
             pad: pad,
-            short_help_offset: short_help_offset,
-            long_help_offset: long_help_offset
+            short_help_offset: {
+                if short_help_offset != 0 { Some(short_help_offset) }
+                else { None }
+            },
+            long_help_offset: {
+                if long_help_offset != 0 { Some(long_help_offset) }
+                else { None }
+            }
         })
     }
 }
 
 pub struct ValueBlk {
-    _mmv_offset: u64,
-    value: u64,
-    string_offset: u64,
-    metric_offset: u64,
-    instance_offset: u64
+    pub value: u64,
+    pub string_offset: Option<u64>,
+    pub metric_offset: Option<u64>,
+    pub instance_offset: Option<u64>
 }
 
 impl ValueBlk {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
         let value = c.read_u64::<Endian>()?;
-
         let string_offset = c.read_u64::<Endian>()?;
-        if string_offset == 0 {
-            return_mmvdumperror!("Invalid string offset");
-        }
-
         let metric_offset = c.read_u64::<Endian>()?;
-        if metric_offset == 0 {
-            return_mmvdumperror!("Invalid metric offset");
-        }
-
         let instance_offset = c.read_u64::<Endian>()?;
-        if instance_offset == 0 {
-            return_mmvdumperror!("Invalid instance offset");
-        }
 
         Ok(ValueBlk {
-            _mmv_offset: _mmv_offset,
             value: value,
-            string_offset: string_offset,
-            metric_offset: metric_offset,
-            instance_offset: instance_offset
+            string_offset: {
+                if string_offset != 0 { Some(string_offset) }
+                else { None }
+            },
+            metric_offset: {
+                if metric_offset != 0 { Some(metric_offset) }
+                else { None }
+            },
+            instance_offset: {
+                if instance_offset != 0 { Some(instance_offset) }
+                else { None }
+            },
         })
     }
 }
 
 pub struct IndomBlk {
-    _mmv_offset: u64,
-    indom: u32,
-    instances: u32,
-    instances_offset: u64,
-    short_help_offset: u64,
-    long_help_offset: u64
+    pub indom: u32,
+    pub instances: u32,
+    pub instances_offset: Option<u64>,
+    pub short_help_offset: Option<u64>,
+    pub long_help_offset: Option<u64>
 }
 
 impl IndomBlk {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
         let indom = c.read_u32::<Endian>()?;
         let instances = c.read_u32::<Endian>()?;
-
         let instances_offset = c.read_u64::<Endian>()?;
-        if instances_offset == 0 {
-            return_mmvdumperror!("Invalid instance offset");
-        }
-
         let short_help_offset = c.read_u64::<Endian>()?;
-        if short_help_offset == 0 {
-            return_mmvdumperror!("Invalid short help offset");
-        }
-
         let long_help_offset = c.read_u64::<Endian>()?;
-        if long_help_offset == 0 {
-            return_mmvdumperror!("Invalid long help offset");
-        }
 
         Ok(IndomBlk {
-            _mmv_offset: _mmv_offset,
             indom: indom,
             instances: instances,
-            instances_offset: instances_offset,
-            short_help_offset: short_help_offset,
-            long_help_offset: long_help_offset
+            instances_offset: {
+                if instances_offset != 0 { Some(instances_offset) }
+                else { None }
+            },
+            short_help_offset: {
+                if short_help_offset != 0 { Some(short_help_offset) }
+                else { None }
+            },
+            long_help_offset: {
+                if long_help_offset != 0 { Some(long_help_offset) }
+                else { None }
+            }
         })
     }
 }
 
 pub struct InstanceBlk {
-    _mmv_offset: u64,
-    indom_offset: u64,
-    pad: u32,
-    internal_id: u32,
-    external_id: [u8; METRIC_NAME_MAX_LEN as usize]
+    pub indom_offset: Option<u64>,
+    pub pad: u32,
+    pub internal_id: i32,
+    pub external_id: String
 }
 
 impl InstanceBlk {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
-
         let indom_offset = c.read_u64::<Endian>()?;
-        if indom_offset == 0 {
-            return_mmvdumperror!("Invalid indom offset");
-        }
 
         let pad = c.read_u32::<Endian>()?;
         if pad != 0 {
-            return_mmvdumperror!("Invalid pad bytes");
+            return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
-        let internal_id = c.read_u32::<Endian>()?;
+        let internal_id = c.read_i32::<Endian>()?;
 
-        let mut external_id = [0; METRIC_NAME_MAX_LEN as usize];
-        c.read_exact(&mut external_id)?;
+        let mut external_id_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+        c.read_exact(&mut external_id_bytes)?;
+        let cstr = unsafe {
+            CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
+        };
+        let external_id = cstr.to_str()?.to_owned();
 
         Ok(InstanceBlk {
-            _mmv_offset: _mmv_offset,
-            indom_offset: indom_offset,
+            indom_offset: {
+                if indom_offset != 0 { Some(indom_offset) }
+                else { None }
+            },
             pad: pad,
             internal_id: internal_id,
             external_id: external_id
@@ -317,19 +316,19 @@ impl InstanceBlk {
 }
 
 pub struct StringBlk {
-    _mmv_offset: u64,
-    string: [u8; STRING_BLOCK_LEN as usize]
+    pub string: String
 }
 
 impl StringBlk {
     fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let _mmv_offset = c.position();
-
-        let mut string = [0; STRING_BLOCK_LEN as usize];
-        c.read_exact(&mut string)?;
+        let mut bytes = [0; STRING_BLOCK_LEN as usize];
+        c.read_exact(&mut bytes)?;
+        let cstr = unsafe {
+            CStr::from_ptr(bytes.as_ptr() as *const i8)
+        };
+        let string = cstr.to_str()?.to_owned();
 
         Ok(StringBlk {
-            _mmv_offset: _mmv_offset,
             string: string
         })
     }
@@ -338,16 +337,17 @@ impl StringBlk {
 macro_rules! blks_from_toc (
     ($toc:expr, $blk_typ:tt, $cursor:expr) => (
         if let Some(ref toc) = $toc {
-            let mut blks = Vec::with_capacity(toc.entries as usize);
+            let mut blks = BTreeMap::new();
 
             $cursor.set_position(toc.sec_offset);
             for _ in 0..toc.entries as usize {
-                blks.push($blk_typ::from_cursor(&mut $cursor)?);
+                let blk_offset = $cursor.position();
+                blks.insert(blk_offset, $blk_typ::from_cursor(&mut $cursor)?);
             }
 
             blks
         } else {
-            Vec::new()
+            BTreeMap::new()
         }
     )
 );
@@ -377,10 +377,10 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     }
 
     if metric_toc.is_none() {
-        return_mmvdumperror!("Metric TOC absent");
+        return_mmvdumperror!("Metric TOC absent", 0);
     }
     if value_toc.is_none() {
-        return_mmvdumperror!("String TOC absent");
+        return_mmvdumperror!("String TOC absent", 0);
     }
 
     let indom_blks = blks_from_toc!(indom_toc, IndomBlk, cursor);
