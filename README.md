@@ -2,6 +2,16 @@
 
 This is a work-in-progress PCP Memory Mapped Value (MMV) instrumentation API in Rust.
 
+Currently, only singleton metrics are supported. There is a simple example of it's usage at `examples/physical.rs`. To run it, do
+
+```
+cargo run --example physical
+```
+
+Then,
+- if you have a valid PCP installation, the metrics can be monitored using the command `pminfo -f mmv.physical_metrics`, and the MMV file itself can be found at `$PCP_TMP_DIR/mmv/physical_metrics`.
+- if PCP isn't installed, the MMV file will be found in `/tmp/mmv/`, though in order to view it you'll have compile the `mmvdump` tool (found [here](https://github.com/performancecopilot/speed/tree/master/mmvdump) or [here](https://github.com/performancecopilot/pcp/blob/master/src/pmdas/mmv/mmvdump.c)) and run `./mmvdump /tmp/mmv/physical_metrics`.
+
 ## License
 
 Licensed under either of
