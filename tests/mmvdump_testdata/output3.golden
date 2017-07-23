@@ -9,7 +9,7 @@ TOC[0]: toc offset 40, metrics offset 88 (1 entries)
   [1022/88] bat.names
       type=String (0x6), sem=instant (0x3), pad=0x0
       unit=1048576
-      indom=4294967295
+      (no indom)
       (no shorttext)
       (no longtext)
  

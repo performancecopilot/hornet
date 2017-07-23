@@ -18,6 +18,8 @@ const STRING_BLOCK_LEN: u64 = 256;
 const METRIC_NAME_MAX_LEN: u64 = 64;
 const MAX_STRINGS_PER_METRIC: u64 = 3;
 const TOC_BLOCK_COUNT: u64 = 3;
+const ITEM_BIT_LEN: usize = 10;
+const INDOM_BIT_LEN: usize = 22;
 
 type Endian = byteorder::LittleEndian;
 

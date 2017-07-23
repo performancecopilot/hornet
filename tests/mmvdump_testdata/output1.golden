@@ -9,7 +9,7 @@ TOC[0]: toc offset 40, metrics offset 88 (1 entries)
   [725/88] simple.counter
       type=Int32 (0x0), sem=counter (0x1), pad=0x0
       unit=1048576
-      indom=4294967295
+      (no indom)
       shorttext=A Simple Metric
       longtext=This is a simple counter metric to demonstrate the speed API
  

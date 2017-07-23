@@ -21,26 +21,28 @@ fn print_indoms(mmv: &MMV, toc_index: u8) -> bool {
             toc_index, indom_toc._mmv_offset, indom_toc.sec_offset, indom_toc.entries);
 
         for (offset, indom) in &mmv.indom_blks {
-            print!("  [{}/{}] {} instances, starting at offset ",
-                indom.indom, offset, indom.instances);
-            if let Some(instances_offset) = indom.instances_offset {
-                println!("{}", instances_offset);
-            } else {
-                println!("(no instances)")
-            }
-    
-            if let Some(ref short_help_offset) = indom.short_help_offset {
-                let shortext = &mmv.string_blks.get(short_help_offset).unwrap().string;
-                println!("      shorttext={}", shortext);
-            } else {
-                println!("      (no shorttext)");
-            }
+            if let Some(ref indom_id) = indom.indom {
+                print!("  [{}/{}] {} instances, starting at offset ",
+                    indom_id, offset, indom.instances);
+                if let Some(instances_offset) = indom.instances_offset {
+                    println!("{}", instances_offset);
+                } else {
+                    println!("(no instances)")
+                }
+        
+                if let Some(ref short_help_offset) = indom.short_help_offset {
+                    let shortext = &mmv.string_blks.get(short_help_offset).unwrap().string;
+                    println!("      shorttext={}", shortext);
+                } else {
+                    println!("      (no shorttext)");
+                }
 
-            if let Some(ref long_help_offset) = indom.long_help_offset {
-                let longtext = &mmv.string_blks.get(long_help_offset).unwrap().string;
-                println!("      longtext={}", longtext);
-            } else {
-                println!("      (no longtext)");
+                if let Some(ref long_help_offset) = indom.long_help_offset {
+                    let longtext = &mmv.string_blks.get(long_help_offset).unwrap().string;
+                    println!("      longtext={}", longtext);
+                } else {
+                    println!("      (no longtext)");
+                }
             }
         }
         true
@@ -57,7 +59,11 @@ fn print_instances(mmv: &MMV, toc_index: u8) -> bool {
         for (offset, instance) in &mmv.instance_blks {
             if let Some(ref indom_offset) = instance.indom_offset {
                 let indom = &mmv.indom_blks.get(indom_offset).unwrap();
-                print!("  [{}", indom.indom);
+                if let Some(ref indom_id) = indom.indom {
+                    print!("  [{}", indom_id);
+                } else {
+                    print!("  [(no indom)");
+                }
             } else {
                 print!("  [(no indom)");
             }
@@ -102,32 +108,34 @@ fn print_metrics(mmv: &MMV, toc_index: u8) {
         toc_index, metric_toc._mmv_offset, metric_toc.sec_offset, metric_toc.entries);
 
     for (offset, metric) in &mmv.metric_blks {
-        println!("  [{}/{}] {}", metric.item, offset, metric.name);
+        if let Some(item) = metric.item {
+            println!("  [{}/{}] {}", item, offset, metric.name);
 
-        println!("      type={} (0x{:x}), sem={} (0x{:x}), pad=0x{:x}",
-            metric_type_str_repr(metric.typ), metric.typ,
-            semantics_str_repr(metric.sem), metric.sem,
-            metric.pad);
-        println!("      unit={}", metric.unit);
+            println!("      type={} (0x{:x}), sem={} (0x{:x}), pad=0x{:x}",
+                metric_type_str_repr(metric.typ), metric.typ,
+                semantics_str_repr(metric.sem), metric.sem,
+                metric.pad);
+            println!("      unit={}", metric.unit);
 
-        if let Some(indom) = metric.indom {
-            println!("      indom={}", indom);
-        } else {
-            println!("      (no indom)");
-        }
+            if let Some(indom) = metric.indom {
+                println!("      indom={}", indom);
+            } else {
+                println!("      (no indom)");
+            }
 
-        if let Some(ref short_help_offset) = metric.short_help_offset {
-            let shortext = &mmv.string_blks.get(short_help_offset).unwrap().string;
-            println!("      shorttext={}", shortext);
-        } else {
-            println!("      (no shorttext)");
-        }
+            if let Some(ref short_help_offset) = metric.short_help_offset {
+                let shortext = &mmv.string_blks.get(short_help_offset).unwrap().string;
+                println!("      shorttext={}", shortext);
+            } else {
+                println!("      (no shorttext)");
+            }
 
-        if let Some(ref long_help_offset) = metric.long_help_offset {
-             let longtext = &mmv.string_blks.get(long_help_offset).unwrap().string;
-            println!("      longtext={}", longtext);
-        } else {
-            println!("      (no longtext)");
+            if let Some(ref long_help_offset) = metric.long_help_offset {
+                let longtext = &mmv.string_blks.get(long_help_offset).unwrap().string;
+                println!("      longtext={}", longtext);
+            } else {
+                println!("      (no longtext)");
+            }
         }
     }
 }
@@ -140,19 +148,21 @@ fn print_values(mmv: &MMV, toc_index: u8) {
     for (offset, value) in &mmv.value_blks {
         if let Some(ref metric_offset) = value.metric_offset {
             let metric = mmv.metric_blks.get(&metric_offset).unwrap();
-            print!("  [{}/{}] {}", metric.item, offset, metric.name);
+            if let Some(item) = metric.item {
+                print!("  [{}/{}] {}", item, offset, metric.name);
 
-            if let Some(ref instance_offset) = value.instance_offset {
-                let instance = mmv.instance_blks.get(&instance_offset).unwrap();
-                print!("[{} or \"{}\"]", instance.internal_id, instance.external_id);
+                if let Some(ref instance_offset) = value.instance_offset {
+                    let instance = mmv.instance_blks.get(&instance_offset).unwrap();
+                    print!("[{} or \"{}\"]", instance.internal_id, instance.external_id);
+                }
+
+                if let Some(ref string_offset) = value.string_offset {
+                    let string = mmv.string_blks.get(&string_offset).unwrap();
+                    println!(" = \"{}\"", string.string);
+                } else {
+                    println!(" = {}", value.value);
+                }
             }
-
-            if let Some(ref string_offset) = value.string_offset {
-                let string = mmv.string_blks.get(&string_offset).unwrap();
-                println!(" = \"{}\"", string.string);
-            } else {
-                println!(" = {}", value.value);
-            } 
         }
     }
 }

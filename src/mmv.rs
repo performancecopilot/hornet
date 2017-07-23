@@ -18,8 +18,18 @@ use super::{
     Endian,
     METRIC_NAME_MAX_LEN,
     STRING_BLOCK_LEN,
-    CLUSTER_ID_BIT_LEN
+    CLUSTER_ID_BIT_LEN,
+    ITEM_BIT_LEN,
+    INDOM_BIT_LEN
 };
+
+fn is_valid_indom(indom: u32) -> bool {
+    indom != 0 && (indom >> INDOM_BIT_LEN) == 0
+}
+
+fn is_valid_item(item: u32) -> bool {
+    item != 0 && (item >> ITEM_BIT_LEN) == 0
+}
 
 #[derive(Debug)]
 pub enum MMVDumpError {
@@ -155,7 +165,7 @@ impl TOC {
 
 pub struct MetricBlk {
     pub name: String,
-    pub item: u32,
+    pub item: Option<u32>,
     pub typ: u32,
     pub sem: u32,
     pub unit: u32,
@@ -190,12 +200,15 @@ impl MetricBlk {
         
         Ok(MetricBlk {
             name: name,
-            item: item,
+            item: {
+                if is_valid_item(item) { Some(item) }
+                else { None }
+            },
             typ: typ,
             sem: sem,
             unit: unit,
             indom: {
-                if indom != 0 { Some(indom) }
+                if is_valid_indom(indom) { Some(indom) }
                 else { None }
             },
             pad: pad,
@@ -244,7 +257,7 @@ impl ValueBlk {
 }
 
 pub struct IndomBlk {
-    pub indom: u32,
+    pub indom: Option<u32>,
     pub instances: u32,
     pub instances_offset: Option<u64>,
     pub short_help_offset: Option<u64>,
@@ -260,7 +273,10 @@ impl IndomBlk {
         let long_help_offset = c.read_u64::<Endian>()?;
 
         Ok(IndomBlk {
-            indom: indom,
+            indom: {
+                if is_valid_indom(indom) { Some(indom) }
+                else { None }
+            },
             instances: instances,
             instances_offset: {
                 if instances_offset != 0 { Some(instances_offset) }
