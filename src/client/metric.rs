@@ -99,6 +99,35 @@ pub enum Space {
     EByte
 }
 
+impl Space {
+    fn from_u8(x: u8) -> Option<Self> {
+        match x {
+            0 => Some(Space::Byte),
+            1 => Some(Space::KByte),
+            2 => Some(Space::MByte),
+            3 => Some(Space::GByte),
+            4 => Some(Space::TByte),
+            5 => Some(Space::PByte),
+            6 => Some(Space::EByte),
+            _ => None
+        }
+    }
+}
+
+impl fmt::Display for Space {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Space::Byte => write!(f, "B"),
+            Space::KByte => write!(f, "KiB"),
+            Space::MByte => write!(f, "MiB"),
+            Space::GByte => write!(f, "GiB"),
+            Space::TByte => write!(f, "TiB"),
+            Space::PByte => write!(f, "PiB"),
+            Space::EByte => write!(f, "EiB")
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 /// Scale for the time component of a unit
 pub enum Time {
@@ -116,10 +145,54 @@ pub enum Time {
     Hour
 }
 
+impl Time {
+    fn from_u8(x: u8) -> Option<Self> {
+        match x {
+            0 => Some(Time::NSec),
+            1 => Some(Time::USec),
+            2 => Some(Time::MSec),
+            3 => Some(Time::Sec),
+            4 => Some(Time::Min),
+            5 => Some(Time::Hour),
+            _ => None
+        }
+    }
+}
+
+impl fmt::Display for Time {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Time::NSec => write!(f, "nsec"),
+            Time::USec => write!(f, "usec"),
+            Time::MSec => write!(f, "msec"),
+            Time::Sec => write!(f, "sec"),
+            Time::Min => write!(f, "min"),
+            Time::Hour => write!(f, "hr"),
+        }
+    }
+}
+
 #[derive(Copy, Clone)]
 /// Scale for the count component of a unit
 pub enum Count {
     One = 0
+}
+
+impl Count {
+    fn from_u8(x: u8) -> Option<Self> {
+        match x {
+            0 => Some(Count::One),
+            _ => None
+        }
+    }
+}
+
+impl fmt::Display for Count {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Count::One => write!(f, "count")
+        }
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -138,6 +211,15 @@ pub struct Unit {
     pmapi_repr: u32
 }
 
+const SPACE_DIM_LSB: u8 = 28;
+const TIME_DIM_LSB: u8 = 24;
+const COUNT_DIM_LSB: u8 = 20;
+const SPACE_SCALE_LSB: u8 = 16;
+const TIME_SCALE_LSB: u8 = 12;
+const COUNT_SCALE_LSB: u8 = 8;
+
+const LS_FOUR_BIT_MASK: u32 = 0xF;
+
 macro_rules! check_dim (
     ($dim:expr) => (
         if $dim > 7 || $dim < -8 {
@@ -147,36 +229,131 @@ macro_rules! check_dim (
 );
 
 impl Unit {
+    /// Returns a unit constructed from a raw PMAPI representation
+    pub fn from_raw(pmapi_repr: u32) -> Self {
+        Unit {
+            pmapi_repr: pmapi_repr
+        }
+    }
+
     /// Returns an empty unit with all dimensions set to `0`
     /// and all scales set to an undefined variant
     pub fn new() -> Self {
-        Unit {
-            pmapi_repr: 0
-        }
+        Self::from_raw(0)
     }
 
     /// Modifies and returns the unit with given space scale and dimension
     pub fn space(mut self, scale: Space, dim: i8) -> Result<Self, String> {
         check_dim!(dim);
-        self.pmapi_repr |= (scale as u32) << 16;
-        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 28;
+        self.pmapi_repr |= (scale as u32) << SPACE_SCALE_LSB;
+        self.pmapi_repr |= ((dim as u32) & LS_FOUR_BIT_MASK) << SPACE_DIM_LSB;
         Ok(self)
     }
 
     /// Modifies and returns the unit with given time scale and dimension
     pub fn time(mut self, time: Time, dim: i8) -> Result<Self, String> {
         check_dim!(dim);
-        self.pmapi_repr |= (time as u32) << 12;
-        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 24;
+        self.pmapi_repr |= (time as u32) << TIME_SCALE_LSB;
+        self.pmapi_repr |= ((dim as u32) & LS_FOUR_BIT_MASK) << TIME_DIM_LSB;
         Ok(self)
     }
 
     /// Modifies and returns the unit with given count scale and dimension
     pub fn count(mut self, count: Count, dim: i8) -> Result<Self, String> {
         check_dim!(dim);
-        self.pmapi_repr |= (count as u32) << 8;
-        self.pmapi_repr |= ((dim as u32) & ((1 << 4) - 1)) << 20;
+        self.pmapi_repr |= (count as u32) << COUNT_SCALE_LSB;
+        self.pmapi_repr |= ((dim as u32) & LS_FOUR_BIT_MASK) << COUNT_DIM_LSB;
         Ok(self)
+    }
+
+    fn space_scale(&self) -> u8 {
+        ((self.pmapi_repr >> SPACE_SCALE_LSB) & LS_FOUR_BIT_MASK) as u8
+    }
+
+    fn time_scale(&self) -> u8 {
+        ((self.pmapi_repr >> TIME_SCALE_LSB) & LS_FOUR_BIT_MASK) as u8
+    }
+
+    fn count_scale(&self) -> u8 {
+        ((self.pmapi_repr >> COUNT_SCALE_LSB) & LS_FOUR_BIT_MASK) as u8
+    }
+
+    /*
+        We have a 4-bit value in two's complement form which we have to
+        sign-extend to 8 bits. We first left shift our 4 bits in pmapi_repr
+        to the most significant position, then do an arithmetic right shift
+        to bring them to the least significant position in order to
+        sign-extend the remaining 4 bits.
+
+        In Rust, an arthimetic/logical right shift is performed depending on
+        whether the integer is signed or unsigned. Hence, we cast our integer
+        to an i32 before we right shift it.
+    */
+    fn dim(&self, lsb: u8) -> i8 {
+        (
+            ( self.pmapi_repr << (32 - (lsb + 4)) ) as i32
+            >> 28
+        ) as i8
+    }
+
+    fn space_dim(&self) -> i8 {
+        self.dim(SPACE_DIM_LSB)
+    }
+
+    fn time_dim(&self) -> i8 {
+        self.dim(TIME_DIM_LSB)
+    }
+
+    fn count_dim(&self) -> i8 {
+        self.dim(COUNT_DIM_LSB)
+    }
+}
+
+macro_rules! write_dim (
+    ($dim:expr, $scale:expr, $scale_type:tt, $f:expr) => (
+        if let Some(dim_scale) = $scale_type::from_u8($scale) {
+            write!($f, "{}", dim_scale)?;
+            if $dim > 1 {
+                write!($f, "^{}", $dim.abs())?;
+            }
+            write!($f, " ")?;
+        }
+    )
+);
+
+impl fmt::Display for Unit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let space_dim = self.space_dim();
+        let space_scale = self.space_scale();
+        let time_dim = self.time_dim();
+        let time_scale = self.time_scale();
+        let count_dim = self.count_dim();
+        let count_scale = self.count_scale();
+
+        if space_dim > 0 {
+            write_dim!(space_dim, space_scale, Space, f);
+        }
+        if time_dim > 0 {
+            write_dim!(time_dim, time_scale, Time, f);
+        }
+        if count_dim > 0 {
+            write_dim!(count_dim, count_scale, Count, f);
+        }
+
+        if space_dim < 0 || time_dim < 0 || count_dim < 0 {
+            write!(f, " / ")?;
+            if space_dim < 0 {
+                write_dim!(space_dim, space_scale, Space, f);
+            }
+            if time_dim < 0 {
+                write_dim!(time_dim, time_scale, Time, f);
+            }
+            if count_dim < 0 {
+                write_dim!(count_dim, count_scale, Count, f);
+            }
+        }
+
+        write!(f, "(0x{:x})", self.pmapi_repr)
     }
 }
 

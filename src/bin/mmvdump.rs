@@ -2,7 +2,7 @@ extern crate hornet;
 extern crate enum_primitive;
 
 use hornet::mmv::*;
-use hornet::client::metric::Semantics;
+use hornet::client::metric::{Semantics, Unit};
 use enum_primitive::FromPrimitive;
 use std::env;
 use std::path::Path;
@@ -105,7 +105,7 @@ fn print_metrics(mmv: &MMV, toc_index: u8) {
             print!(", ");
             println!("pad=0x{:x}", metric.pad);
             
-            println!("      unit={}", metric.unit);
+            println!("      unit={}", Unit::from_raw(metric.unit));
 
             print!("      ");
             match metric.indom {
