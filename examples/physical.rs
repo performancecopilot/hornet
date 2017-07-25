@@ -42,7 +42,7 @@ fn main() {
     /* create a client, register the metrics with it, and export them */
 
     Client::new("physical_metrics").unwrap()
-        .begin(3).unwrap()
+        .begin_metrics(3).unwrap()
         .register_metric(&mut freq).unwrap()
         .register_metric(&mut color).unwrap()
         .register_metric(&mut photons).unwrap()
