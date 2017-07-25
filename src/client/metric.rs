@@ -8,22 +8,13 @@ use std::io;
 use std::io::Write;
 use std::mem;
 
+use super::super::mmv::MTCode;
 use super::super::{
     ITEM_BIT_LEN,
     INDOM_BIT_LEN,
     METRIC_NAME_MAX_LEN,
     STRING_BLOCK_LEN
 };
-
-pub (super) enum MTCode {
-    I32 = 0,
-    U32,
-    I64,
-    U64,
-    F32,
-    F64,
-    String
-}
 
 mod private {
     use byteorder::WriteBytesExt;
@@ -189,15 +180,14 @@ impl Unit {
     }
 }
 
-#[derive(Copy, Clone)]
-/// Semantic for a Metric
-pub enum Semantics {
-    /// Counter
-    Counter  = 1,
-    /// Instant
-    Instant  = 3,
-    /// Discrete
-    Discrete = 4
+enum_from_primitive! {
+    #[derive(Copy, Clone)]
+    /// Semantic for a Metric
+    pub enum Semantics {
+        Counter  = 1,
+        Instant  = 3,
+        Discrete = 4
+    }
 }
 
 impl fmt::Display for Semantics {

@@ -3,6 +3,7 @@ extern crate memmap;
 extern crate regex;
 extern crate time;
 #[macro_use] extern crate bitflags;
+#[macro_use] extern crate enum_primitive;
 #[macro_use] extern crate lazy_static;
 #[cfg(test)] extern crate rand;
 #[cfg(unix)] extern crate nix;

@@ -1,7 +1,9 @@
 extern crate hornet;
+extern crate enum_primitive;
 
 use hornet::mmv::*;
 use hornet::client::metric::Semantics;
+use enum_primitive::FromPrimitive;
 use std::env;
 use std::path::Path;
 
@@ -76,32 +78,6 @@ fn print_instances(mmv: &MMV, toc_index: u8) -> bool {
     }
 }
 
-fn metric_type_str_repr<'a>(typ: u32) -> &'a str {
-    match typ {
-        0 => "Int32",
-        1 => "Uint32",
-        2 => "Int64",
-        3 => "Uint64",
-        4 => "Float32",
-        5 => "Double64",
-        6 => "String",
-        _ => "(invalid type)"
-    }
-}
-
-const COUNTER: u32 = Semantics::Counter as u32;
-const INSTANT: u32 = Semantics::Instant as u32;
-const DISCRETE: u32 = Semantics::Discrete as u32;
-
-fn u32_to_semantics(sem: u32) -> Option<Semantics> {
-    match sem {
-        COUNTER => Some(Semantics::Counter),
-        INSTANT => Some(Semantics::Instant),
-        DISCRETE => Some(Semantics::Discrete),
-        _ => None
-    }
-}
-
 fn print_metrics(mmv: &MMV, toc_index: u8) {
     let metric_toc = &mmv.metric_toc;
     println!("TOC[{}]: toc offset {}, metrics offset {} ({} entries)",
@@ -111,13 +87,18 @@ fn print_metrics(mmv: &MMV, toc_index: u8) {
         if let Some(item) = metric.item {
             println!("  [{}/{}] {}", item, offset, metric.name);
 
-            print!("      type={} (0x{:x}), ", metric_type_str_repr(metric.typ), metric.typ);
-            if let Some(semantics) = u32_to_semantics(metric.sem) {
-                print!("sem={}", semantics);
-            } else {
-                print!("(invalid semantics)");
+            print!("      ");
+            match MTCode::from_u32(metric.typ) {
+                Some(mtcode) => print!("type={}", mtcode),
+                None => print!("(invalid type)")
             }
-            println!(", pad=0x{:x}", metric.pad);
+            print!(", ");
+            match Semantics::from_u32(metric.sem) {
+                Some(sem) => print!("sem={}", sem),
+                None => print!("(invalid semantics)")
+            }
+            print!(", ");
+            println!("pad=0x{:x}", metric.pad);
             
             println!("      unit={}", metric.unit);
 

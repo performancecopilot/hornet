@@ -9,6 +9,7 @@ repository = "https://github.com/performancecopilot/hornet"
 [dependencies]
 bitflags = "0.9.1"
 byteorder = "1.0.0"
+enum_primitive = "0.1.1"
 lazy_static = "0.2.8"
 memmap = "0.5.2"
 regex = "0.2"

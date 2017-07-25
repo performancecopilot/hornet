@@ -1,6 +1,7 @@
 use byteorder::ReadBytesExt;
 use std::collections::BTreeMap;
 use std::ffi::CStr;
+use std::fmt;
 use std::fs::File;
 use std::io;
 use std::io::Cursor;
@@ -13,6 +14,35 @@ const INSTANCE_TOC_CODE: u32 = 2;
 const METRIC_TOC_CODE: u32 = 3;
 const VALUES_TOC_CODE: u32 = 4;
 const STRINGS_TOC_CODE: u32 = 5;
+
+enum_from_primitive! {
+    #[derive(Copy, Clone)]
+    /// MMV code for a metric type
+    pub enum MTCode {
+        I32 = 0,
+        U32,
+        I64,
+        U64,
+        F32,
+        F64,
+        String
+    }
+}
+
+impl fmt::Display for MTCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            MTCode::I32 => write!(f, "Int32")?,
+            MTCode::U32 => write!(f, "Uint32")?,
+            MTCode::I64 => write!(f, "Int64")?,
+            MTCode::U64 => write!(f, "Uint64")?,
+            MTCode::F32 => write!(f, "Float32")?,
+            MTCode::F64 => write!(f, "Double64")?,
+            MTCode::String => write!(f, "String")?
+        }
+        write!(f, " (0x{:x})", *self as u32)
+    }
+}
 
 use super::{
     Endian,

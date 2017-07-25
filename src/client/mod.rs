@@ -13,6 +13,7 @@ use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::str;
 use time;
 
+use super::mmv::MTCode;
 use super::{
     Endian,
     CLUSTER_ID_BIT_LEN,
@@ -29,7 +30,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{Indom, InstanceMetric, Metric, MetricType, MTCode};
+use self::metric::{Indom, InstanceMetric, Metric, MetricType};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
