@@ -35,6 +35,10 @@ fn is_valid_cluster_id(cluster_id: u32) -> bool {
     (cluster_id >> CLUSTER_ID_BIT_LEN) == 0
 }
 
+fn is_valid_blk_offset(offset: u64) -> bool {
+    offset != 0
+}
+
 #[derive(Debug)]
 pub enum MMVDumpError {
     InvalidMMV(String),
@@ -154,7 +158,7 @@ impl TOC {
         let entries = c.read_u32::<Endian>()?;
 
         let sec_offset = c.read_u64::<Endian>()?;
-        if sec_offset == 0 {
+        if !is_valid_blk_offset(sec_offset) {
             return_mmvdumperror!("Invalid section offset", sec_offset);
         }
 
@@ -217,11 +221,11 @@ impl MetricBlk {
             },
             pad: pad,
             short_help_offset: {
-                if short_help_offset != 0 { Some(short_help_offset) }
+                if is_valid_blk_offset(short_help_offset) { Some(short_help_offset) }
                 else { None }
             },
             long_help_offset: {
-                if long_help_offset != 0 { Some(long_help_offset) }
+                if is_valid_blk_offset(long_help_offset) { Some(long_help_offset) }
                 else { None }
             }
         })
@@ -245,15 +249,15 @@ impl ValueBlk {
         Ok(ValueBlk {
             value: value,
             string_offset: {
-                if string_offset != 0 { Some(string_offset) }
+                if is_valid_blk_offset(string_offset) { Some(string_offset) }
                 else { None }
             },
             metric_offset: {
-                if metric_offset != 0 { Some(metric_offset) }
+                if is_valid_blk_offset(metric_offset) { Some(metric_offset) }
                 else { None }
             },
             instance_offset: {
-                if instance_offset != 0 { Some(instance_offset) }
+                if is_valid_blk_offset(instance_offset) { Some(instance_offset) }
                 else { None }
             },
         })
@@ -283,15 +287,15 @@ impl IndomBlk {
             },
             instances: instances,
             instances_offset: {
-                if instances_offset != 0 { Some(instances_offset) }
+                if is_valid_blk_offset(instances_offset) { Some(instances_offset) }
                 else { None }
             },
             short_help_offset: {
-                if short_help_offset != 0 { Some(short_help_offset) }
+                if is_valid_blk_offset(short_help_offset) { Some(short_help_offset) }
                 else { None }
             },
             long_help_offset: {
-                if long_help_offset != 0 { Some(long_help_offset) }
+                if is_valid_blk_offset(long_help_offset) { Some(long_help_offset) }
                 else { None }
             }
         })
@@ -325,7 +329,7 @@ impl InstanceBlk {
 
         Ok(InstanceBlk {
             indom_offset: {
-                if indom_offset != 0 { Some(indom_offset) }
+                if is_valid_blk_offset(indom_offset) { Some(indom_offset) }
                 else { None }
             },
             pad: pad,
