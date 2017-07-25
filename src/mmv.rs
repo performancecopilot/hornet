@@ -31,6 +31,10 @@ fn is_valid_item(item: u32) -> bool {
     item != 0 && (item >> ITEM_BIT_LEN) == 0
 }
 
+fn is_valid_cluster_id(cluster_id: u32) -> bool {
+    (cluster_id >> CLUSTER_ID_BIT_LEN) == 0
+}
+
 #[derive(Debug)]
 pub enum MMVDumpError {
     InvalidMMV(String),
@@ -114,7 +118,7 @@ impl Header {
         let pid = c.read_i32::<Endian>()?;
 
         let cluster_id = c.read_u32::<Endian>()?;
-        if (cluster_id >> (32 - CLUSTER_ID_BIT_LEN)) != 0 {
+        if !is_valid_cluster_id(cluster_id) {
             return_mmvdumperror!("Invalid cluster ID", cluster_id);
         }
 
