@@ -209,4 +209,5 @@ fn main() {
     toc_index += 1;
 
     print_strings(&mmv, toc_index);
+    println!(" ");
 }
