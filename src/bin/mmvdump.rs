@@ -93,12 +93,12 @@ const COUNTER: u32 = Semantics::Counter as u32;
 const INSTANT: u32 = Semantics::Instant as u32;
 const DISCRETE: u32 = Semantics::Discrete as u32;
 
-fn semantics_str_repr<'a>(sem: u32) -> &'a str {
+fn u32_to_semantics(sem: u32) -> Option<Semantics> {
     match sem {
-        COUNTER => "counter",
-        INSTANT => "instant",
-        DISCRETE => "discrete",
-        _ => "(invalid semantics)"
+        COUNTER => Some(Semantics::Counter),
+        INSTANT => Some(Semantics::Instant),
+        DISCRETE => Some(Semantics::Discrete),
+        _ => None
     }
 }
 
@@ -111,10 +111,14 @@ fn print_metrics(mmv: &MMV, toc_index: u8) {
         if let Some(item) = metric.item {
             println!("  [{}/{}] {}", item, offset, metric.name);
 
-            println!("      type={} (0x{:x}), sem={} (0x{:x}), pad=0x{:x}",
-                metric_type_str_repr(metric.typ), metric.typ,
-                semantics_str_repr(metric.sem), metric.sem,
-                metric.pad);
+            print!("      type={} (0x{:x}), ", metric_type_str_repr(metric.typ), metric.typ);
+            if let Some(semantics) = u32_to_semantics(metric.sem) {
+                print!("sem={}", semantics);
+            } else {
+                print!("(invalid semantics)");
+            }
+            println!(", pad=0x{:x}", metric.pad);
+            
             println!("      unit={}", metric.unit);
 
             if let Some(indom) = metric.indom {

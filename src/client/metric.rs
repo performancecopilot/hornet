@@ -1,6 +1,7 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use std::collections::hash_map::DefaultHasher;
+use std::fmt;
 use std::hash::Hasher;
 use std::io;
 use std::io::{Cursor, Write};
@@ -191,6 +192,17 @@ pub enum Semantics {
     Instant  = 3,
     /// Discrete
     Discrete = 4
+}
+
+impl fmt::Display for Semantics {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Semantics::Counter => write!(f, "counter")?,
+            Semantics::Instant => write!(f, "instant")?,
+            Semantics::Discrete => write!(f, "discrete")?
+        }
+        write!(f, " (0x{:x})", *self as u32)
+    }
 }
 
 /// Singleton metric
