@@ -89,10 +89,14 @@ fn is_valid_blk_offset(offset: u64) -> bool {
     offset != 0
 }
 
+/// Error encountered while reading and parsing an MMV
 #[derive(Debug)]
 pub enum MMVDumpError {
+    /// Invalid bytes in MMV
     InvalidMMV(String),
+    /// IO error while reading MMV
     Io(io::Error),
+    /// UTF-8 error while parsing MMV strings
     Utf8(str::Utf8Error)
 }
 
@@ -116,6 +120,18 @@ macro_rules! return_mmvdumperror (
     )
 );
 
+/// Trait for structures that read and parse MMV bytes
+pub trait MMVReader {
+    /// Reads and parses MMV bytes from reader `r` and returns the
+    /// relevant structure
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError>
+        where Self: Sized;
+}
+
+/// MMV structure
+///
+/// The various data blocks are stored in BTreeMaps; the key for each
+/// block is it's offset in the MMV
 pub struct MMV {
     pub header: Header,
     pub metric_toc: TOC,
@@ -130,6 +146,7 @@ pub struct MMV {
     pub instance_blks: BTreeMap<u64, InstanceBlk>
 }
 
+/// MMV header structure
 pub struct Header {
     pub magic: [u8; 4],
     pub version: u32,
@@ -141,7 +158,7 @@ pub struct Header {
     pub cluster_id: u32,
 }
 
-impl Header {
+impl MMVReader for Header {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut magic = [0; 4];
         magic[0] = r.read_u8()?;
@@ -189,6 +206,7 @@ impl Header {
     }
 }
 
+/// MMV Table-of-Contents structure
 pub struct TOC {
     pub _mmv_offset: u64,
     pub sec: u32,
@@ -196,7 +214,7 @@ pub struct TOC {
     pub sec_offset: u64
 }
 
-impl TOC {
+impl MMVReader for TOC {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let sec = r.read_u32::<Endian>()?;
         if sec > 5 {
@@ -219,6 +237,7 @@ impl TOC {
     }
 }
 
+/// Metric block structure
 pub struct MetricBlk {
     pub name: String,
     pub item: Option<u32>,
@@ -231,7 +250,7 @@ pub struct MetricBlk {
     pub long_help_offset: Option<u64>
 }
 
-impl MetricBlk {
+impl MMVReader for MetricBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
         r.read_exact(&mut name_bytes)?;
@@ -280,6 +299,7 @@ impl MetricBlk {
     }
 }
 
+/// Value block structure
 pub struct ValueBlk {
     pub value: u64,
     pub string_offset: Option<u64>,
@@ -287,7 +307,7 @@ pub struct ValueBlk {
     pub instance_offset: Option<u64>
 }
 
-impl ValueBlk {
+impl MMVReader for ValueBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let value = r.read_u64::<Endian>()?;
         let string_offset = r.read_u64::<Endian>()?;
@@ -312,6 +332,7 @@ impl ValueBlk {
     }
 }
 
+/// Indom block structure
 pub struct IndomBlk {
     pub indom: Option<u32>,
     pub instances: u32,
@@ -320,7 +341,7 @@ pub struct IndomBlk {
     pub long_help_offset: Option<u64>
 }
 
-impl IndomBlk {
+impl MMVReader for IndomBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let indom = r.read_u32::<Endian>()?;
         let instances = r.read_u32::<Endian>()?;
@@ -350,6 +371,7 @@ impl IndomBlk {
     }
 }
 
+/// Instance block structure
 pub struct InstanceBlk {
     pub indom_offset: Option<u64>,
     pub pad: u32,
@@ -357,7 +379,7 @@ pub struct InstanceBlk {
     pub external_id: String
 }
 
-impl InstanceBlk {
+impl MMVReader for InstanceBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let indom_offset = r.read_u64::<Endian>()?;
 
@@ -387,11 +409,12 @@ impl InstanceBlk {
     }
 }
 
+/// String block structure
 pub struct StringBlk {
     pub string: String
 }
 
-impl StringBlk {
+impl MMVReader for StringBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut bytes = [0; STRING_BLOCK_LEN as usize];
         r.read_exact(&mut bytes)?;
@@ -424,6 +447,8 @@ macro_rules! blks_from_toc (
     )
 );
 
+/// Returns an `MMV` structure by reading and parsing the MMV
+/// file stored at `mmv_path`
 pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     let mut mmv_bytes = Vec::new();
     let mut file = File::open(mmv_path)?;
