@@ -122,36 +122,36 @@ pub struct Header {
 }
 
 impl Header {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut magic = [0; 4];
-        magic[0] = c.read_u8()?;
-        magic[1] = c.read_u8()?;
-        magic[2] = c.read_u8()?;
-        magic[3] = c.read_u8()?;
+        magic[0] = r.read_u8()?;
+        magic[1] = r.read_u8()?;
+        magic[2] = r.read_u8()?;
+        magic[3] = r.read_u8()?;
         if magic != [b'M', b'M', b'V', 0] {
             return_mmvdumperror!("Invalid MMV", 0);
         }
 
-        let version = c.read_u32::<Endian>()?;
+        let version = r.read_u32::<Endian>()?;
         if version != 1 && version != 2 {
             return_mmvdumperror!("Invalid version number", version);
         }
 
-        let gen1 = c.read_i64::<Endian>()?;
-        let gen2 = c.read_i64::<Endian>()?;
+        let gen1 = r.read_i64::<Endian>()?;
+        let gen2 = r.read_i64::<Endian>()?;
         if gen1 != gen2 {
             return_mmvdumperror!("Generation timestamps don't match", 0);
         } 
 
-        let toc_count = c.read_u32::<Endian>()?;
+        let toc_count = r.read_u32::<Endian>()?;
         if toc_count > 5 || toc_count < 2 {
             return_mmvdumperror!("Invalid TOC count", toc_count);
         }
 
-        let flags = c.read_u32::<Endian>()?;
-        let pid = c.read_i32::<Endian>()?;
+        let flags = r.read_u32::<Endian>()?;
+        let pid = r.read_i32::<Endian>()?;
 
-        let cluster_id = c.read_u32::<Endian>()?;
+        let cluster_id = r.read_u32::<Endian>()?;
         if !is_valid_cluster_id(cluster_id) {
             return_mmvdumperror!("Invalid cluster ID", cluster_id);
         }
@@ -177,23 +177,21 @@ pub struct TOC {
 }
 
 impl TOC {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let mmv_offset = c.position();
-
-        let sec = c.read_u32::<Endian>()?;
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
+        let sec = r.read_u32::<Endian>()?;
         if sec > 5 {
             return_mmvdumperror!("Invalid TOC type", sec);
         }
 
-        let entries = c.read_u32::<Endian>()?;
+        let entries = r.read_u32::<Endian>()?;
 
-        let sec_offset = c.read_u64::<Endian>()?;
+        let sec_offset = r.read_u64::<Endian>()?;
         if !is_valid_blk_offset(sec_offset) {
             return_mmvdumperror!("Invalid section offset", sec_offset);
         }
 
         Ok(TOC {
-            _mmv_offset: mmv_offset,
+            _mmv_offset: 0,
             sec: sec,
             entries: entries,
             sec_offset: sec_offset
@@ -214,27 +212,27 @@ pub struct MetricBlk {
 }
 
 impl MetricBlk {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
-        c.read_exact(&mut name_bytes)?;
+        r.read_exact(&mut name_bytes)?;
         let cstr = unsafe {
             CStr::from_ptr(name_bytes.as_ptr() as *const i8)
         };
         let name = cstr.to_str()?.to_owned();
 
-        let item = c.read_u32::<Endian>()?;
-        let typ = c.read_u32::<Endian>()?;
-        let sem = c.read_u32::<Endian>()?;
-        let unit = c.read_u32::<Endian>()?;
-        let indom = c.read_u32::<Endian>()?;
+        let item = r.read_u32::<Endian>()?;
+        let typ = r.read_u32::<Endian>()?;
+        let sem = r.read_u32::<Endian>()?;
+        let unit = r.read_u32::<Endian>()?;
+        let indom = r.read_u32::<Endian>()?;
 
-        let pad = c.read_u32::<Endian>()?;
+        let pad = r.read_u32::<Endian>()?;
         if pad != 0 {
             return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
-        let short_help_offset = c.read_u64::<Endian>()?;
-        let long_help_offset = c.read_u64::<Endian>()?;
+        let short_help_offset = r.read_u64::<Endian>()?;
+        let long_help_offset = r.read_u64::<Endian>()?;
         
         Ok(MetricBlk {
             name: name,
@@ -270,11 +268,11 @@ pub struct ValueBlk {
 }
 
 impl ValueBlk {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let value = c.read_u64::<Endian>()?;
-        let string_offset = c.read_u64::<Endian>()?;
-        let metric_offset = c.read_u64::<Endian>()?;
-        let instance_offset = c.read_u64::<Endian>()?;
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
+        let value = r.read_u64::<Endian>()?;
+        let string_offset = r.read_u64::<Endian>()?;
+        let metric_offset = r.read_u64::<Endian>()?;
+        let instance_offset = r.read_u64::<Endian>()?;
 
         Ok(ValueBlk {
             value: value,
@@ -303,12 +301,12 @@ pub struct IndomBlk {
 }
 
 impl IndomBlk {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let indom = c.read_u32::<Endian>()?;
-        let instances = c.read_u32::<Endian>()?;
-        let instances_offset = c.read_u64::<Endian>()?;
-        let short_help_offset = c.read_u64::<Endian>()?;
-        let long_help_offset = c.read_u64::<Endian>()?;
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
+        let indom = r.read_u32::<Endian>()?;
+        let instances = r.read_u32::<Endian>()?;
+        let instances_offset = r.read_u64::<Endian>()?;
+        let short_help_offset = r.read_u64::<Endian>()?;
+        let long_help_offset = r.read_u64::<Endian>()?;
 
         Ok(IndomBlk {
             indom: {
@@ -340,18 +338,18 @@ pub struct InstanceBlk {
 }
 
 impl InstanceBlk {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
-        let indom_offset = c.read_u64::<Endian>()?;
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
+        let indom_offset = r.read_u64::<Endian>()?;
 
-        let pad = c.read_u32::<Endian>()?;
+        let pad = r.read_u32::<Endian>()?;
         if pad != 0 {
             return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
-        let internal_id = c.read_i32::<Endian>()?;
+        let internal_id = r.read_i32::<Endian>()?;
 
         let mut external_id_bytes = [0; METRIC_NAME_MAX_LEN as usize];
-        c.read_exact(&mut external_id_bytes)?;
+        r.read_exact(&mut external_id_bytes)?;
         let cstr = unsafe {
             CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
         };
@@ -374,9 +372,9 @@ pub struct StringBlk {
 }
 
 impl StringBlk {
-    fn from_cursor(c: &mut Cursor<Vec<u8>>) -> Result<Self, MMVDumpError> {
+    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut bytes = [0; STRING_BLOCK_LEN as usize];
-        c.read_exact(&mut bytes)?;
+        r.read_exact(&mut bytes)?;
         let cstr = unsafe {
             CStr::from_ptr(bytes.as_ptr() as *const i8)
         };
@@ -396,7 +394,7 @@ macro_rules! blks_from_toc (
             $cursor.set_position(toc.sec_offset);
             for _ in 0..toc.entries as usize {
                 let blk_offset = $cursor.position();
-                blks.insert(blk_offset, $blk_typ::from_cursor(&mut $cursor)?);
+                blks.insert(blk_offset, $blk_typ::from_reader(&mut $cursor)?);
             }
 
             blks
@@ -413,7 +411,7 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
 
     let mut cursor = Cursor::new(mmv_bytes);
     
-    let hdr = Header::from_cursor(&mut cursor)?;
+    let hdr = Header::from_reader(&mut cursor)?;
 
     let mut indom_toc = None;
     let mut instance_toc = None;
@@ -422,7 +420,10 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     let mut string_toc = None;
 
     for _ in 0..hdr.toc_count {
-        let toc = TOC::from_cursor(&mut cursor)?;
+        let toc_position = cursor.position();
+        let mut toc = TOC::from_reader(&mut cursor)?;
+        toc._mmv_offset = toc_position;
+
         if toc.sec == INDOM_TOC_CODE { indom_toc = Some(toc); }
         else if toc.sec == INSTANCE_TOC_CODE { instance_toc = Some(toc); }
         else if toc.sec == METRIC_TOC_CODE { metric_toc = Some(toc); }
