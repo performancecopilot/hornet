@@ -1,6 +1,6 @@
 use byteorder::ReadBytesExt;
 use std::collections::BTreeMap;
-use std::ffi::CStr;
+use std::ffi::CStr; // Used to read null-terminated strings in MMV files
 use std::fmt;
 use std::fs::File;
 use std::io;
