@@ -120,7 +120,7 @@ macro_rules! return_mmvdumperror (
     )
 );
 
-/// Trait for structures that read and parse MMV bytes
+/// Trait for creating MMV structures by reading and parsing MMV bytes
 pub trait MMVReader {
     /// Reads and parses MMV bytes from reader `r` and returns the
     /// relevant structure
