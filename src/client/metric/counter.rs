@@ -1,7 +1,7 @@
 use super::*;
 
-/// A counter metric for strictly increasing integer values, in
-/// possibly varying increments.
+/// A counter metric for a strictly increasing integer value, in
+/// possibly varying increments
 ///
 /// Internally uses a `Metric<u64>` with `Semantics::Counter` and
 /// `Count::One` scale, and `1` count dimension
