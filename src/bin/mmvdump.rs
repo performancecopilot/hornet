@@ -1,6 +1,7 @@
 extern crate hornet;
 
 use hornet::mmv::*;
+use hornet::client::MMVFlags;
 use hornet::client::metric::{Semantics, Unit};
 use std::env;
 use std::path::Path;
@@ -12,7 +13,7 @@ fn print_header(mmv: &MMV) {
     println!("TOC count  = {}", hdr.toc_count);
     println!("Cluster    = {}", hdr.cluster_id);
     println!("Process    = {}", hdr.pid);
-    println!("Flags      = 0x{:x}", hdr.flags);
+    println!("Flags      = {}", MMVFlags::from_bits_truncate(hdr.flags));
 }
 
 fn print_indoms(mmv: &MMV, toc_index: u8) -> bool {

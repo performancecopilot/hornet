@@ -3,7 +3,7 @@ Generated  = 1469590299
 TOC count  = 3
 Cluster    = 764
 Process    = 22340
-Flags      = 0x2
+Flags      = process (0x2)
 
 TOC[0]: toc offset 40, metrics offset 88 (1 entries)
   [1022/88] bat.names

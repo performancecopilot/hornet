@@ -3,7 +3,7 @@ Generated  = 1469335238
 TOC count  = 4
 Cluster    = 1297
 Process    = 6410
-Flags      = 0x2
+Flags      = process (0x2)
 
 TOC[0]: toc offset 40, indoms offset 104 (1 entries)
   [3094651/104] 3 instances, starting at offset 136

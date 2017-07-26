@@ -3,7 +3,7 @@ Generated  = 1468770536
 TOC count  = 3
 Cluster    = 127
 Process    = 29956
-Flags      = 0x2
+Flags      = process (0x2)
 
 TOC[0]: toc offset 40, metrics offset 88 (1 entries)
   [725/88] simple.counter
