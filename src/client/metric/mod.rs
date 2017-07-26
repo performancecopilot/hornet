@@ -14,6 +14,15 @@ use super::super::{
     STRING_BLOCK_LEN
 };
 
+mod counter;
+pub use self::counter::Counter;
+
+mod gauge;
+pub use self::gauge::Gauge;
+
+mod timer;
+pub use self::timer::Timer;
+
 pub (super) enum MTCode {
     I32 = 0,
     U32,
@@ -210,6 +219,10 @@ pub struct Metric<T> {
     longhelp: String,
     pub (super) val: T,
     pub (super) mmap_view: MmapViewSync
+}
+
+impl<T> AsMut<Metric<T>> for Metric<T> {
+    fn as_mut(&mut self) -> &mut Metric<T> { self }
 }
 
 lazy_static! {
