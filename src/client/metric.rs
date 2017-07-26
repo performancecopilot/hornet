@@ -357,13 +357,25 @@ impl fmt::Display for Unit {
     }
 }
 
-enum_from_primitive! {
-    #[derive(Copy, Clone)]
-    /// Semantic for a Metric
-    pub enum Semantics {
-        Counter  = 1,
-        Instant  = 3,
-        Discrete = 4
+#[derive(Copy, Clone)]
+/// Semantic for a Metric
+pub enum Semantics {
+    /// Counter
+    Counter  = 1,
+    /// Instant
+    Instant  = 3,
+    /// Discrete
+    Discrete = 4
+}
+
+impl Semantics {
+    pub fn from_u32(x: u32) -> Option<Self> {
+        match x {
+            1 => Some(Semantics::Counter),
+            3 => Some(Semantics::Instant),
+            4 => Some(Semantics::Discrete),
+            _ => None
+        }
     }
 }
 

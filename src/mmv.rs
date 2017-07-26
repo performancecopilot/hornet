@@ -15,17 +15,37 @@ const METRIC_TOC_CODE: u32 = 3;
 const VALUES_TOC_CODE: u32 = 4;
 const STRINGS_TOC_CODE: u32 = 5;
 
-enum_from_primitive! {
-    #[derive(Copy, Clone)]
-    /// MMV code for a metric type
-    pub enum MTCode {
-        I32 = 0,
-        U32,
-        I64,
-        U64,
-        F32,
-        F64,
-        String
+#[derive(Copy, Clone)]
+/// MMV code for a metric type
+pub enum MTCode {
+    /// 32-bit signed integer
+    I32 = 0,
+    /// 32-bit unsigned integer
+    U32,
+    /// 64-bit signed integer
+    I64,
+    /// 64-bit unsigned integer
+    U64,
+    /// 32-bit float
+    F32,
+    /// 64-bit double
+    F64,
+    /// String
+    String
+}
+
+impl MTCode {
+    pub fn from_u32(x: u32) -> Option<Self> {
+        match x {
+            0 => Some(MTCode::I32),
+            1 => Some(MTCode::U32),
+            2 => Some(MTCode::I64),
+            3 => Some(MTCode::U64),
+            4 => Some(MTCode::F32),
+            5 => Some(MTCode::F64),
+            6 => Some(MTCode::String),
+            _ => None
+        }
     }
 }
 

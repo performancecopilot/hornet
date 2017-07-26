@@ -1,9 +1,7 @@
 extern crate hornet;
-extern crate enum_primitive;
 
 use hornet::mmv::*;
 use hornet::client::metric::{Semantics, Unit};
-use enum_primitive::FromPrimitive;
 use std::env;
 use std::path::Path;
 
