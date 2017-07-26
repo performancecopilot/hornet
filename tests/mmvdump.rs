@@ -12,12 +12,12 @@ fn test_mmvdump() {
     mmvdump_path.push("target/debug/mmvdump");
 
     let mut testdata_dir = crate_dir.clone();
-    testdata_dir.push("tests/mmvdump_testdata");
+    testdata_dir.push("tests/testdata");
     let tests = fs::read_dir(&testdata_dir).unwrap().count() / 2;
 
-    let input_prefix = "test";
+    let input_prefix = "mmvdump_ip";
     let input_suffix = ".mmv";
-    let output_prefix = "output";
+    let output_prefix = "mmvdump_op";
     let output_suffix = ".golden";
 
     for i in 1..tests+1 {
