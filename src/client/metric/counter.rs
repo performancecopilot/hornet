@@ -6,15 +6,16 @@ use super::*;
 /// Internally uses a `Metric<u64>` with `Semantics::Counter` and
 /// `Count::One` scale, and `1` count dimension
 pub struct Counter {
-    metric: Metric<u64>
+    metric: Metric<u64>,
+    init_val: u64
 }
 
 impl Counter {
-    /// Creates a new counter metric with initial value `0`
-    pub fn new(name: &str, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+    /// Creates a new counter metric with given initial value
+    pub fn new(name: &str, init_val: u64, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         let metric = Metric::new(
             name,
-            0,
+            init_val,
             Semantics::Counter,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
@@ -22,7 +23,8 @@ impl Counter {
         )?;
 
         Ok(Counter {
-            metric: metric
+            metric: metric,
+            init_val: init_val
         })
     }
 
@@ -40,6 +42,12 @@ impl Counter {
     /// Increments the counter by `+1`
     pub fn up(&mut self) -> io::Result<()> {
         self.inc(1)
+    }
+
+    /// Resets the counter to the initial value that was passed when
+    /// creating it
+    pub fn reset(&mut self) -> io::Result<()> {
+        self.metric.set_val(self.init_val)
     }
 }
 
@@ -59,8 +67,8 @@ impl AsMut<Metric<u64>> for Counter {
 pub fn test() {
     use super::super::Client;
 
-    let mut counter = Counter::new("counter", "", "").unwrap();
-    assert_eq!(counter.val(), 0);
+    let mut counter = Counter::new("counter", 1, "", "").unwrap();
+    assert_eq!(counter.val(), 1);
 
     Client::new("counter_test").unwrap()
         .begin_metrics(1).unwrap()
@@ -68,8 +76,11 @@ pub fn test() {
         .export().unwrap();
     
     counter.up().unwrap();
-    assert_eq!(counter.val(), 1);
+    assert_eq!(counter.val(), 2);
 
     counter.inc(3).unwrap();
-    assert_eq!(counter.val(), 4);
+    assert_eq!(counter.val(), 5);
+
+    counter.reset().unwrap();
+    assert_eq!(counter.val(), 1);
 }
