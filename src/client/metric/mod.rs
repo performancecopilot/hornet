@@ -2,6 +2,7 @@ use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use std::collections::HashSet;
 use std::collections::hash_map::{DefaultHasher, HashMap};
+use std::collections::hash_set::Iter;
 use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::Write;
@@ -22,6 +23,9 @@ pub use self::gauge::Gauge;
 
 mod timer;
 pub use self::timer::Timer;
+
+mod countvector;
+pub use self::countvector::CountVector;
 
 pub (super) enum MTCode {
     I32 = 0,
@@ -347,6 +351,12 @@ impl Indom {
         self.instances.contains(instance)
     }
 
+    /// Returns an iterator visiting the instances in
+    /// arbitrary order
+    pub fn instances_iter(&self) -> Iter<String> {
+        self.instances.iter()
+    }
+
     pub fn shorthelp(&self) -> &str { &self.shorthelp }
     pub fn longhelp(&self) -> &str { &self.longhelp }
 
@@ -369,6 +379,10 @@ pub struct InstanceMetric<T> {
     pub (super) indom: Indom,
     pub (super) vals: HashMap<String, Instance<T>>,
     pub (super) metric: Metric<T>
+}
+
+impl<T> AsMut<InstanceMetric<T>> for InstanceMetric<T> {
+    fn as_mut(&mut self) -> &mut InstanceMetric<T> { self }
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
