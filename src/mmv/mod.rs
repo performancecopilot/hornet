@@ -9,6 +9,8 @@ use std::io::prelude::*;
 use std::path::Path;
 use std::str;
 
+mod mmvfmt;
+
 const INDOM_TOC_CODE: u32 = 1;
 const INSTANCE_TOC_CODE: u32 = 2;
 const METRIC_TOC_CODE: u32 = 3;
@@ -233,6 +235,7 @@ impl MMVReader for Header {
 
 /// MMV Table-of-Contents structure
 pub struct TocBlk {
+    _toc_index: u32,
     _mmv_offset: u64,
     sec: u32,
     entries: u32,
@@ -240,6 +243,7 @@ pub struct TocBlk {
 }
 
 impl TocBlk {
+    pub fn _toc_index(&self) -> u32 { self._toc_index }
     pub fn _mmv_offset(&self) -> u64 { self._mmv_offset }
     pub fn sec(&self) -> u32 { self.sec }
     pub fn entries(&self) -> u32 { self.entries }
@@ -261,6 +265,7 @@ impl MMVReader for TocBlk {
         }
 
         Ok(TocBlk {
+            _toc_index: 0,
             _mmv_offset: 0,
             sec: sec,
             entries: entries,
@@ -534,9 +539,10 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     let mut value_toc = None;
     let mut string_toc = None;
 
-    for _ in 0..hdr.toc_count {
+    for i in 0..hdr.toc_count {
         let toc_position = cursor.position();
         let mut toc = TocBlk::from_reader(&mut cursor)?;
+        toc._toc_index = i;
         toc._mmv_offset = toc_position;
 
         if toc.sec == INDOM_TOC_CODE { indom_toc = Some(toc); }

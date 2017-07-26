@@ -12,11 +12,11 @@ TOC[0]: toc offset 40, metrics offset 88 (1 entries)
       (no indom)
       shorttext=A Simple Metric
       longtext=This is a simple counter metric to demonstrate the speed API
- 
+
 TOC[1]: toc offset 56, values offset 192 (1 entries)
   [725/192] simple.counter = 42
- 
+
 TOC[2]: toc offset 72, strings offset 224 (2 entries)
   [1/224] A Simple Metric
   [2/480] This is a simple counter metric to demonstrate the speed API
- 
+
