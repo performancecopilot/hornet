@@ -133,17 +133,31 @@ pub trait MMVReader {
 /// The various data blocks are stored in BTreeMaps; the key for each
 /// block is it's offset in the MMV
 pub struct MMV {
-    pub header: Header,
-    pub metric_toc: TOC,
-    pub value_toc: TOC,
-    pub string_toc: Option<TOC>,
-    pub indom_toc: Option<TOC>,
-    pub instance_toc: Option<TOC>,
-    pub metric_blks: BTreeMap<u64, MetricBlk>,
-    pub value_blks: BTreeMap<u64, ValueBlk>,
-    pub string_blks: BTreeMap<u64, StringBlk>,
-    pub indom_blks: BTreeMap<u64, IndomBlk>,
-    pub instance_blks: BTreeMap<u64, InstanceBlk>
+    header: Header,
+    metric_toc: TocBlk,
+    value_toc: TocBlk,
+    string_toc: Option<TocBlk>,
+    indom_toc: Option<TocBlk>,
+    instance_toc: Option<TocBlk>,
+    metric_blks: BTreeMap<u64, MetricBlk>,
+    value_blks: BTreeMap<u64, ValueBlk>,
+    string_blks: BTreeMap<u64, StringBlk>,
+    indom_blks: BTreeMap<u64, IndomBlk>,
+    instance_blks: BTreeMap<u64, InstanceBlk>
+}
+
+impl MMV {
+    pub fn header(&self) -> &Header { &self.header }
+    pub fn metric_toc(&self) -> &TocBlk { &self.metric_toc }
+    pub fn value_toc(&self) -> &TocBlk { &self.value_toc }
+    pub fn string_toc(&self) -> &Option<TocBlk> { &self.string_toc }
+    pub fn indom_toc(&self) -> &Option<TocBlk> { &self.indom_toc }
+    pub fn instance_toc(&self) -> &Option<TocBlk> { &self.instance_toc }
+    pub fn metric_blks(&self) -> &BTreeMap<u64, MetricBlk> { &self.metric_blks }
+    pub fn value_blks(&self) -> &BTreeMap<u64, ValueBlk> { &self.value_blks }
+    pub fn string_blks(&self) -> &BTreeMap<u64, StringBlk> { &self.string_blks }
+    pub fn indom_blks(&self) -> &BTreeMap<u64, IndomBlk> { &self.indom_blks }
+    pub fn instance_blks(&self) -> &BTreeMap<u64, InstanceBlk> { &self.instance_blks }
 }
 
 /// MMV header structure
@@ -156,6 +170,17 @@ pub struct Header {
     pub flags: u32,
     pub pid: i32,
     pub cluster_id: u32,
+}
+
+impl Header {
+    pub fn magic(&self) -> &[u8; 4] { &self.magic }
+    pub fn version(&self) -> u32 { self.version }
+    pub fn gen1(&self) -> i64 { self.gen1 }
+    pub fn gen2(&self) -> i64 { self.gen2 }
+    pub fn toc_count(&self) -> u32 { self.toc_count }
+    pub fn flags(&self) -> u32 { self.flags }
+    pub fn pid(&self) -> i32 { self.pid }
+    pub fn cluster_id(&self) -> u32 { self.cluster_id }
 }
 
 impl MMVReader for Header {
@@ -207,14 +232,21 @@ impl MMVReader for Header {
 }
 
 /// MMV Table-of-Contents structure
-pub struct TOC {
-    pub _mmv_offset: u64,
-    pub sec: u32,
-    pub entries: u32,
-    pub sec_offset: u64
+pub struct TocBlk {
+    _mmv_offset: u64,
+    sec: u32,
+    entries: u32,
+    sec_offset: u64
 }
 
-impl MMVReader for TOC {
+impl TocBlk {
+    pub fn _mmv_offset(&self) -> u64 { self._mmv_offset }
+    pub fn sec(&self) -> u32 { self.sec }
+    pub fn entries(&self) -> u32 { self.entries }
+    pub fn sec_offset(&self) -> u64 { self.sec_offset }
+}
+
+impl MMVReader for TocBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let sec = r.read_u32::<Endian>()?;
         if sec > 5 {
@@ -228,7 +260,7 @@ impl MMVReader for TOC {
             return_mmvdumperror!("Invalid section offset", sec_offset);
         }
 
-        Ok(TOC {
+        Ok(TocBlk {
             _mmv_offset: 0,
             sec: sec,
             entries: entries,
@@ -239,15 +271,27 @@ impl MMVReader for TOC {
 
 /// Metric block structure
 pub struct MetricBlk {
-    pub name: String,
-    pub item: Option<u32>,
-    pub typ: u32,
-    pub sem: u32,
-    pub unit: u32,
-    pub indom: Option<u32>,
-    pub pad: u32,
-    pub short_help_offset: Option<u64>,
-    pub long_help_offset: Option<u64>
+    name: String,
+    item: Option<u32>,
+    typ: u32,
+    sem: u32,
+    unit: u32,
+    indom: Option<u32>,
+    pad: u32,
+    short_help_offset: Option<u64>,
+    long_help_offset: Option<u64>
+}
+
+impl MetricBlk {
+    pub fn name(&self) -> &str { &self.name }
+    pub fn item(&self) -> &Option<u32> { &self.item }
+    pub fn typ(&self) -> u32 { self.typ }
+    pub fn sem(&self) -> u32 { self.sem }
+    pub fn unit(&self) -> u32 { self.unit }
+    pub fn indom(&self) -> &Option<u32> { &self.indom }
+    pub fn pad(&self) -> u32 { self.pad }
+    pub fn short_help_offset(&self) -> &Option<u64> { &self.short_help_offset }
+    pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
 }
 
 impl MMVReader for MetricBlk {
@@ -301,10 +345,17 @@ impl MMVReader for MetricBlk {
 
 /// Value block structure
 pub struct ValueBlk {
-    pub value: u64,
-    pub string_offset: Option<u64>,
-    pub metric_offset: Option<u64>,
-    pub instance_offset: Option<u64>
+    value: u64,
+    string_offset: Option<u64>,
+    metric_offset: Option<u64>,
+    instance_offset: Option<u64>
+}
+
+impl ValueBlk {
+    pub fn value(&self) -> u64 { self.value }
+    pub fn string_offset(&self) -> &Option<u64> { &self.string_offset }
+    pub fn metric_offset(&self) -> &Option<u64> { &self.metric_offset }
+    pub fn instance_offset(&self) -> &Option<u64> { &self.instance_offset }
 }
 
 impl MMVReader for ValueBlk {
@@ -334,11 +385,19 @@ impl MMVReader for ValueBlk {
 
 /// Indom block structure
 pub struct IndomBlk {
-    pub indom: Option<u32>,
-    pub instances: u32,
-    pub instances_offset: Option<u64>,
-    pub short_help_offset: Option<u64>,
-    pub long_help_offset: Option<u64>
+    indom: Option<u32>,
+    instances: u32,
+    instances_offset: Option<u64>,
+    short_help_offset: Option<u64>,
+    long_help_offset: Option<u64>
+}
+
+impl IndomBlk {
+    pub fn indom(&self) -> &Option<u32> { &self.indom }
+    pub fn instances(&self) -> u32 { self.instances }
+    pub fn instances_offset(&self) -> &Option<u64> { &self.instances_offset }
+    pub fn short_help_offset(&self) -> &Option<u64> { &self.short_help_offset }
+    pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
 }
 
 impl MMVReader for IndomBlk {
@@ -373,10 +432,17 @@ impl MMVReader for IndomBlk {
 
 /// Instance block structure
 pub struct InstanceBlk {
-    pub indom_offset: Option<u64>,
-    pub pad: u32,
-    pub internal_id: i32,
-    pub external_id: String
+    indom_offset: Option<u64>,
+    pad: u32,
+    internal_id: i32,
+    external_id: String
+}
+
+impl InstanceBlk {
+    pub fn indom_offset(&self) -> &Option<u64> { &self.indom_offset }
+    pub fn pad(&self) -> u32 { self.pad }
+    pub fn internal_id(&self) -> i32 { self.internal_id }
+    pub fn external_id(&self) -> &str { &self.external_id }
 }
 
 impl MMVReader for InstanceBlk {
@@ -411,7 +477,11 @@ impl MMVReader for InstanceBlk {
 
 /// String block structure
 pub struct StringBlk {
-    pub string: String
+    string: String
+}
+
+impl StringBlk {
+    pub fn string(&self) -> &str { &self.string }
 }
 
 impl MMVReader for StringBlk {
@@ -466,7 +536,7 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
 
     for _ in 0..hdr.toc_count {
         let toc_position = cursor.position();
-        let mut toc = TOC::from_reader(&mut cursor)?;
+        let mut toc = TocBlk::from_reader(&mut cursor)?;
         toc._mmv_offset = toc_position;
 
         if toc.sec == INDOM_TOC_CODE { indom_toc = Some(toc); }
