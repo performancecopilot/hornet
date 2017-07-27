@@ -19,6 +19,9 @@ const STRINGS_TOC_CODE: u32 = 5;
 
 #[derive(Copy, Clone)]
 /// MMV code for a metric type
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/pmapi.h#L113
 pub enum MTCode {
     /// 32-bit signed integer
     I32 = 0,
@@ -130,7 +133,7 @@ pub trait MMVReader {
         where Self: Sized;
 }
 
-/// MMV structure
+/// Top-level MMV structure
 ///
 /// The various data blocks are stored in BTreeMaps; the key for each
 /// block is it's offset in the MMV
@@ -163,6 +166,9 @@ impl MMV {
 }
 
 /// MMV header structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L95
 pub struct Header {
     pub magic: [u8; 4],
     pub version: u32,
@@ -234,6 +240,9 @@ impl MMVReader for Header {
 }
 
 /// MMV Table-of-Contents structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L32
 pub struct TocBlk {
     _toc_index: u32,
     _mmv_offset: u64,
@@ -275,6 +284,9 @@ impl MMVReader for TocBlk {
 }
 
 /// Metric block structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L64
 pub struct MetricBlk {
     name: String,
     item: Option<u32>,
@@ -349,6 +361,9 @@ impl MMVReader for MetricBlk {
 }
 
 /// Value block structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L88
 pub struct ValueBlk {
     value: u64,
     string_offset: Option<u64>,
@@ -389,6 +404,9 @@ impl MMVReader for ValueBlk {
 }
 
 /// Indom block structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L38
 pub struct IndomBlk {
     indom: Option<u32>,
     instances: u32,
@@ -436,6 +454,9 @@ impl MMVReader for IndomBlk {
 }
 
 /// Instance block structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L46
 pub struct InstanceBlk {
     indom_offset: Option<u64>,
     pad: u32,
@@ -481,6 +502,9 @@ impl MMVReader for InstanceBlk {
 }
 
 /// String block structure
+///
+/// For reference to the C API, see
+/// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L60
 pub struct StringBlk {
     string: String
 }
