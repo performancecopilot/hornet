@@ -313,7 +313,7 @@ macro_rules! write_dim (
     ($dim:expr, $scale:expr, $scale_type:tt, $f:expr) => (
         if let Some(dim_scale) = $scale_type::from_u8($scale) {
             write!($f, "{}", dim_scale)?;
-            if $dim > 1 {
+            if $dim.abs() > 1 {
                 write!($f, "^{}", $dim.abs())?;
             }
             write!($f, " ")?;
@@ -341,7 +341,7 @@ impl fmt::Display for Unit {
         }
 
         if space_dim < 0 || time_dim < 0 || count_dim < 0 {
-            write!(f, " / ")?;
+            write!(f, "/ ")?;
             if space_dim < 0 {
                 write_dim!(space_dim, space_scale, Space, f);
             }
