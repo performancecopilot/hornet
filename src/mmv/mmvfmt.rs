@@ -1,6 +1,7 @@
 use super::*;
 use super::super::client::MMVFlags;
 use super::super::client::metric::{Semantics, Unit};
+use std::mem;
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -144,7 +145,31 @@ fn write_values(f: &mut fmt::Formatter, value_toc: &TocBlk, mmv: &MMV) -> fmt::R
                         let string = mmv.string_blks().get(string_offset).unwrap();
                         writeln!(f, "\"{}\"", string.string())?;
                     }
-                    None => writeln!(f, "{}", value.value())?,
+                    None => {
+                        match MTCode::from_u32(metric.typ()) {
+                            Some(mtcode) => {
+                                match mtcode {
+                                    MTCode::U64 | MTCode::U32 => writeln!(f, "{}", value.value())?,
+                                    MTCode::I64 => writeln!(f, "{}", value.value() as i64)?,
+                                    MTCode::I32 => writeln!(f, "{}", value.value() as i32)?,
+                                    MTCode::F32 => {
+                                        let float = unsafe {
+                                            mem::transmute::<u32, f32>(value.value() as u32)
+                                        };
+                                        writeln!(f, "{}", float)?
+                                    },
+                                    MTCode::F64 => {
+                                        let double = unsafe {
+                                            mem::transmute::<u64, f64>(value.value())
+                                        };
+                                        writeln!(f, "{}", double)?
+                                    },
+                                    MTCode::String => writeln!(f, "(no string offset)")?,
+                                }
+                            },
+                            None => writeln!(f, "{}", value.value())?
+                        }
+                    },
                 }
             }
         }
