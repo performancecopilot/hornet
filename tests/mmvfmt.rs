@@ -8,9 +8,7 @@ use std::path::PathBuf;
 
 #[test]
 fn test_mmvfmt() {
-    let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-
-    let mut testdata_dir = crate_dir.clone();
+    let mut testdata_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     testdata_dir.push("tests/data");
     let tests = fs::read_dir(&testdata_dir).unwrap().count() / 2;
 
