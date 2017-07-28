@@ -1,0 +1,36 @@
+Version    = 1
+Generated  = 1501135556
+TOC count  = 3
+Cluster    = 0
+Process    = 15673
+Flags      = no prefix,process,sentinel (0x7)
+
+TOC[0]: toc offset 40, metrics offset 88 (3 entries)
+  [150/88] download_speed
+      type=Double64 (0x5), sem=instant (0x3), pad=0x0
+      unit=MiB / sec (0x1f023000)
+      (no indom)
+      shorttext=Download speed in MiB/sec
+      (no longtext)
+  [372/192] frequency
+      type=Float32 (0x4), sem=instant (0x3), pad=0x0
+      unit=/ sec (0xf003000)
+      (no indom)
+      shorttext=Frequency in Hz
+      (no longtext)
+  [433/296] time
+      type=Int32 (0x0), sem=instant (0x3), pad=0x0
+      unit=hr (0x1005000)
+      (no indom)
+      (no shorttext)
+      (no longtext)
+
+TOC[1]: toc offset 56, values offset 400 (3 entries)
+  [150/400] download_speed = 0.3333333333333333
+  [372/432] frequency = 0.33333334
+  [433/464] time = -6
+
+TOC[2]: toc offset 72, strings offset 496 (2 entries)
+  [1/496] Download speed in MiB/sec
+  [2/752] Frequency in Hz
+
