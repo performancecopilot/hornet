@@ -6,15 +6,16 @@ use super::*;
 /// Internally uses a `Metric<f64>` with `Semantics::Instant`,
 /// `Count::One` scale, and `1` count dimension
 pub struct Gauge {
-    metric: Metric<f64>
+    metric: Metric<f64>,
+    init_val: f64
 }
 
 impl Gauge {
-    /// Creates a new gauge metric with initial value `0.0`
-    pub fn new(name: &str, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+    /// Creates a new gauge metric with given initial value
+    pub fn new(name: &str, init_val: f64, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         let metric = Metric::new(
             name,
-            0.0,
+            init_val,
             Semantics::Instant,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
@@ -22,7 +23,8 @@ impl Gauge {
         )?;
 
         Ok(Gauge {
-            metric: metric
+            metric: metric,
+            init_val: init_val
         })
     }
 
@@ -47,6 +49,12 @@ impl Gauge {
         let val = self.metric.val();
         self.metric.set_val(val - decrement)
     }
+
+    /// Resets the gauge to the initial value that was passed when
+    /// creating it
+    pub fn reset(&mut self) -> io::Result<()> {
+        self.metric.set_val(self.init_val)
+    }
 }
 
 impl AsRef<Metric<f64>> for Gauge {
@@ -65,8 +73,8 @@ impl AsMut<Metric<f64>> for Gauge {
 pub fn test() {
     use super::super::Client;
 
-    let mut gauge = Gauge::new("gauge", "", "").unwrap();
-    assert_eq!(gauge.val(), 0.0);
+    let mut gauge = Gauge::new("gauge", 1.5, "", "").unwrap();
+    assert_eq!(gauge.val(), 1.5);
 
     Client::new("gauge_test").unwrap()
         .begin_metrics(1).unwrap()
@@ -81,4 +89,7 @@ pub fn test() {
 
     gauge.dec(1.5).unwrap();
     assert_eq!(gauge.val(), 4.5);
+
+    gauge.reset().unwrap();
+    assert_eq!(gauge.val(), 1.5);
 }
