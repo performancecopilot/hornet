@@ -11,9 +11,9 @@ TOC[0]: toc offset 40, indoms offset 104 (1 entries)
       (no longtext)
 
 TOC[1]: toc offset 56, instances offset 136 (3 entries)
-  [3094651136 instance = [-2122300086 or "javascript"]
-  [3094651216 instance = [1531230383 or "php"]
-  [3094651296 instance = [1109423947 or "go"]
+  [3094651/136] instance = [-2122300086 or "javascript"]
+  [3094651/216] instance = [1531230383 or "php"]
+  [3094651/296] instance = [1109423947 or "go"]
 
 TOC[2]: toc offset 72, metrics offset 376 (1 entries)
   [1021/376] language.users
