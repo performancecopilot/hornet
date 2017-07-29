@@ -27,6 +27,9 @@ pub use self::timer::Timer;
 mod countvector;
 pub use self::countvector::CountVector;
 
+mod gaugevector;
+pub use self::gaugevector::GaugeVector;
+
 pub (super) enum MTCode {
     I32 = 0,
     U32,
