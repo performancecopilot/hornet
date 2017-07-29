@@ -4,6 +4,7 @@ use regex::bytes::Regex;
 use std::collections::HashMap;
 use std::env;
 use std::ffi::{OsStr, OsString};
+use std::fmt;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
@@ -13,6 +14,7 @@ use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::str;
 use time;
 
+use super::mmv::MTCode;
 use super::{
     Endian,
     CLUSTER_ID_BIT_LEN,
@@ -29,7 +31,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{Indom, InstanceMetric, Metric, MetricType, MTCode};
+use self::metric::{Indom, InstanceMetric, Metric, MetricType};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -154,6 +156,39 @@ bitflags! {
         const PROCESS  = 2;
         /// Allow "no value available" values
         const SENTINEL = 4;
+    }
+}
+
+impl fmt::Display for MMVFlags {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut prev_flag = false;
+
+        if self.contains(NOPREFIX)  {
+            write!(f, "no prefix")?;
+            prev_flag = true;
+        }
+
+        if self.contains(PROCESS)  {
+            if prev_flag {
+                write!(f, ",")?;
+            }
+            write!(f, "process")?;
+            prev_flag = true;
+        }
+
+        if self.contains(SENTINEL)  {
+            if prev_flag {
+                write!(f, ",")?;
+            }
+            write!(f, "sentinel")?;
+            prev_flag = true;
+        }
+
+        if !prev_flag {
+            write!(f, "(no flags)")?;
+        }
+
+        write!(f, " (0x{:x})", self.bits())
     }
 }
 

@@ -1,0 +1,30 @@
+Version    = 1
+Generated  = 1469335238
+TOC count  = 4
+Cluster    = 1297
+Process    = 6410
+Flags      = process (0x2)
+
+TOC[0]: toc offset 40, indoms offset 104 (1 entries)
+  [3094651/104] 3 instances, starting at offset 136
+      (no shorttext)
+      (no longtext)
+
+TOC[1]: toc offset 56, instances offset 136 (3 entries)
+  [3094651136 instance = [-2122300086 or "javascript"]
+  [3094651216 instance = [1531230383 or "php"]
+  [3094651296 instance = [1109423947 or "go"]
+
+TOC[2]: toc offset 72, metrics offset 376 (1 entries)
+  [1021/376] language.users
+      type=Uint64 (0x3), sem=counter (0x1), pad=0x0
+      unit=count (0x100000)
+      indom=3094651
+      (no shorttext)
+      (no longtext)
+
+TOC[3]: toc offset 88, values offset 480 (3 entries)
+  [1021/480] language.users[1109423947 or "go"] = 8388608
+  [1021/512] language.users[-2122300086 or "javascript"] = 330
+  [1021/544] language.users[1531230383 or "php"] = 33
+

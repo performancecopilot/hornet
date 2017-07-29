@@ -30,3 +30,4 @@ type Endian = byteorder::LittleEndian;
 mod private;
 
 pub mod client;
+pub mod mmv;
