@@ -17,7 +17,7 @@ impl GaugeVector {
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
         let indom_helptext = format!("Instance domain for GaugeVector '{}'", name);
-        let indom = Indom::new(instances, &indom_helptext, &indom_helptext).unwrap();
+        let indom = Indom::new(instances, &indom_helptext, &indom_helptext)?;
         
         let im = InstanceMetric::new(
             &indom,

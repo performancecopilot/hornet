@@ -32,6 +32,11 @@ pub use self::countvector::CountVector;
 mod gaugevector;
 pub use self::gaugevector::GaugeVector;
 
+mod histogram;
+pub use self::histogram::Histogram;
+pub use self::histogram::CreationError as HistCreationError;
+pub use self::histogram::RecordError as HistRecordError;
+
 mod private {
     use byteorder::WriteBytesExt;
     use std::io;

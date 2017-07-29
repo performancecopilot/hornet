@@ -11,6 +11,23 @@ pub struct Timer {
     start_time: Option<Tm>
 }
 
+/// Error encountered while starting or stopping a timer
+#[derive(Debug)]
+pub enum Error {
+    /// IO error
+    Io(io::Error),
+    /// Timer was already started
+    TimerAlreadyStarted,
+    /// Timer wasn't previously started
+    TimerNotStarted,
+}
+
+impl From<io::Error> for Error {
+    fn from(err: io::Error) -> Error {
+        Error::Io(err)
+    }
+}
+
 impl Timer {
     /// Creates a new timer metric with given time scale
     pub fn new(name: &str, time_scale: Time,
@@ -34,9 +51,9 @@ impl Timer {
 
     /// Starts the timer. Returns an error if the timer is
     /// already started.
-    pub fn start(&mut self) -> Result<(), String> {
+    pub fn start(&mut self) -> Result<(), Error> {
         if self.start_time.is_some() {
-            return Err("Timer already started!".to_owned());
+            return Err(Error::TimerAlreadyStarted)
         }
         self.start_time = Some(time::now());
         Ok(())
@@ -49,8 +66,8 @@ impl Timer {
     /// over/under-flows, then elapsed time isn't updated.
     /// 
     /// Returns `0` if the timer wasn't started before.
-    pub fn stop(&mut self) -> io::Result<i64> {
-        let result = match self.start_time {
+    pub fn stop(&mut self) -> Result<i64, Error> {
+        match self.start_time {
             Some(start_time) => {
                 let duration = time::now() - start_time;
 
@@ -65,13 +82,13 @@ impl Timer {
 
                 let val = self.metric.val();
                 self.metric.set_val(val + elapsed)?;
+
+                self.start_time = None;
+
                 Ok(elapsed)
             },
-            None => Ok(0)
-        };
-
-        self.start_time = None;
-        result
+            None => Err(Error::TimerNotStarted)
+        }
     }
 
     /// Returns the cumulative time elapsed between every
@@ -107,7 +124,7 @@ pub fn test() {
         .register_metric(&mut timer).unwrap()
         .export().unwrap();
 
-    assert_eq!(timer.stop().unwrap(), 0);
+    assert!(timer.stop().is_err());
     
     let sleep_time = 2; // seconds
 
