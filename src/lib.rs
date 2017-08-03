@@ -22,7 +22,6 @@ const NUMERIC_VALUE_SIZE: usize = 8;
 const STRING_BLOCK_LEN: u64 = 256;
 
 const METRIC_NAME_MAX_LEN: u64 = 64;
-const MIN_STRINGS_PER_METRIC: u64 = 2;
 
 type Endian = byteorder::LittleEndian;
 
