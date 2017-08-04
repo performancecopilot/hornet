@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use super::*;
 
 /// A count vector for multiple strictly increasing integer values, in possibly
@@ -8,31 +9,62 @@ use super::*;
 pub struct CountVector {
     im: InstanceMetric<u64>,
     indom: Indom,
-    init_val: u64
+    init_vals: HashMap<String, u64>
 }
 
 impl CountVector {
-    /// Creates a new count vector with given initial value and instances
+    /// Creates a new count vector with given instances and a single initial value
     pub fn new(name: &str, init_val: u64, instances: &[&str],
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        let indom_helptext = format!("Instance domain for CounterVector '{}'", name);
-        let indom = Indom::new(instances, &indom_helptext, &indom_helptext)?;
+        let mut instances_and_initvals = Vec::new();
+        for instance in instances {
+            instances_and_initvals.push((*instance, init_val));
+        }
+
+        Self::new_with_initvals(
+            name,
+            &instances_and_initvals,
+            shorthelp_text,
+            longhelp_text
+        )
+    }
+
+    /// Creates a new count vector with given pairs of an instance and it's initial value
+    pub fn new_with_initvals(name: &str, instances_and_initvals: &[(&str, u64)],
+        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        let im = InstanceMetric::new(
+        let mut instances = Vec::new();
+        for &(instance, _) in instances_and_initvals.iter() {
+            instances.push(instance);
+        }
+
+        let indom_helptext = format!("Instance domain for CounterVector '{}'", name);
+        let indom = Indom::new(
+            &instances,
+            &indom_helptext, &indom_helptext
+        )?;
+        
+        let mut im = InstanceMetric::new(
             &indom,
             name,
-            init_val,
+            0,
             Semantics::Counter,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
             longhelp_text
         )?;
 
+        let mut init_vals = HashMap::new();
+        for &(instance, init_val) in instances_and_initvals.iter() {
+            init_vals.insert(instance.to_owned(), init_val);
+            im.set_val(instance, init_val).unwrap().unwrap();
+        }
+
         Ok(CountVector {
             im: im,
             indom: indom,
-            init_val: init_val
+            init_vals: init_vals
         })
     }
 
@@ -71,19 +103,19 @@ impl CountVector {
         self.inc_all(1)
     }
 
-    /// Resets the count of the instance to the initial value that
+    /// Resets the count of the instance to it's initial value that
     /// was passed when creating the vector
     ///
     /// The wrapping `Option` is `None` if the instance wasn't found
     pub fn reset(&mut self, instance: &str) -> Option<io::Result<()>> {
-        self.im.set_val(instance, self.init_val)
+        self.im.set_val(instance, *self.init_vals.get(instance).unwrap())
     }
 
-    /// Resets the count of all instances to the initial value that
+    /// Resets the count of all instances to it's initial value that
     /// was passed when creating the vector
     pub fn reset_all(&mut self) -> io::Result<()> {
-        for instance in self.indom.instances_iter() {
-            self.im.set_val(instance, self.init_val).unwrap()?;
+        for (instance, init_val) in self.init_vals.iter() {
+            self.im.set_val(instance, *init_val).unwrap()?;
         }
         Ok(())
     }
@@ -112,7 +144,8 @@ pub fn test() {
         "count_vector",
         1,
         &["a", "b", "c"],
-        "", "").unwrap();
+        "", ""
+    ).unwrap();
 
     assert_eq!(cv.val("a").unwrap(), 1);   
     assert_eq!(cv.val("b").unwrap(), 1);
@@ -146,4 +179,37 @@ pub fn test() {
     assert_eq!(cv.val("a").unwrap(), 1);   
     assert_eq!(cv.val("b").unwrap(), 1);
     assert_eq!(cv.val("c").unwrap(), 1);
+}
+
+#[test]
+pub fn test_multiple_initvals() {
+    use super::super::Client;
+
+    let mut cv = CountVector::new_with_initvals(
+        "count_vector_mutiple_initvals",
+        &[("a", 1), ("b", 2), ("c", 3)],
+        "", ""
+    ).unwrap();
+
+    assert_eq!(cv.val("a").unwrap(), 1);   
+    assert_eq!(cv.val("b").unwrap(), 2);
+    assert_eq!(cv.val("c").unwrap(), 3);
+
+    Client::new("count_vector_test").unwrap()
+        .begin_all(1, 3, 1, 0).unwrap()
+        .register_instance_metric(&mut cv).unwrap()
+        .export().unwrap();
+    
+    cv.up_all().unwrap();
+    assert_eq!(cv.val("a").unwrap(), 2);   
+    assert_eq!(cv.val("b").unwrap(), 3);
+    assert_eq!(cv.val("c").unwrap(), 4);
+
+    cv.reset("b").unwrap().unwrap();
+    assert_eq!(cv.val("b").unwrap(), 2);
+
+    cv.reset_all().unwrap();
+    assert_eq!(cv.val("a").unwrap(), 1);   
+    assert_eq!(cv.val("b").unwrap(), 2);
+    assert_eq!(cv.val("c").unwrap(), 3);
 }
