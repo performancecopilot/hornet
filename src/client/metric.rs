@@ -943,7 +943,7 @@ fn write_value_block<T: MetricType>(ws: &mut MMVWriterState,
         // and in order to not replicate the logic of write_mmv_string here,
         // we perform an extra write of the string to a temp buffer so we
         // can pass that to write_mmv_string.
-        let mut str_buf = [0u8; STRING_BLOCK_LEN as usize];
+        let mut str_buf = [0u8; (STRING_BLOCK_LEN - 1) as usize];
         value.write(&mut (&mut str_buf as &mut [u8]))?;
 
         let str_val = unsafe { str::from_utf8_unchecked(&str_buf) };
@@ -971,7 +971,7 @@ fn write_value_block<T: MetricType>(ws: &mut MMVWriterState,
 }
 
 fn cache_and_register_string(ws: &mut MMVWriterState, string: &str) {
-    if string.len() > 0 && !ws.non_value_string_cache.contains_key(string){
+    if string.len() > 0 && !ws.non_value_string_cache.contains_key(string) {
         ws.non_value_string_cache.insert(string.to_owned(), None);
         ws.n_strings += 1;
     }
@@ -991,7 +991,7 @@ fn write_mmv_string(ws: &mut MMVWriterState,
     let string_block_off =
         ws.string_sec_off
         + STRING_BLOCK_LEN*ws.string_blk_idx;
-
+        
     // only cache if the string is not a value
     if !is_value {
         if let Some(cached_offset) = ws.non_value_string_cache.get(string).clone() {

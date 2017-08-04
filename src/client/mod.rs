@@ -277,8 +277,12 @@ impl Client {
             ws.string_sec_off
             + STRING_BLOCK_LEN*ws.n_strings
         ) as usize;
-        
-        let mut file = OpenOptions::new().read(true).write(true).create(true)
+
+        let mut file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
             .open(&self.mmv_path)?;
 
         file.write(&vec![0; mmv_size])?;
