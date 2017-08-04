@@ -155,7 +155,7 @@ impl Histogram {
 
     /// Control whether or not the histogram can auto-resize and auto-adjust
     /// it's highest trackable value as high-valued samples are recorded
-    pub fn set_autorezise(&mut self, enable: bool) {
+    pub fn set_autoresize(&mut self, enable: bool) {
         self.histogram.auto(enable);
     }
 
