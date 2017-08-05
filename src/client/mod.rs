@@ -18,15 +18,17 @@ use super::{
     CLUSTER_ID_BIT_LEN,
     HDR_LEN,
     TOC_BLOCK_LEN,
-    METRIC_BLOCK_LEN,
     VALUE_BLOCK_LEN,
     STRING_BLOCK_LEN,
     INDOM_BLOCK_LEN,
-    INSTANCE_BLOCK_LEN
+    METRIC_BLOCK_LEN_MMV1,
+    INSTANCE_BLOCK_LEN_MMV1,
+    METRIC_BLOCK_LEN_MMV2,
+    INSTANCE_BLOCK_LEN_MMV2,
 };
 
 pub mod metric;
-use self::metric::{MMVWriter, MMVWriterState};
+use self::metric::{MMVWriter, MMVWriterState, MMV};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -215,22 +217,32 @@ impl Client {
             mmv_path: mmv_path
         })
     }
-    
+
     pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
+        self.export_common(metrics, MMV::V1)
+    }
+
+    pub fn export2(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
+        self.export_common(metrics, MMV::V2)
+    }
+    
+    fn export_common(&self, metrics: &mut [&mut MMVWriter], mmv: MMV) -> io::Result<()> {
         let mut ws = MMVWriterState::new();
 
-        ws.n_toc = 2 /* Metric and Value TOC */;
-
         for m in metrics.iter() {
-            m.register(&mut ws);
+            m.register(&mut ws, mmv);
         }
 
-        if ws.n_indoms > 0 {
-            ws.n_toc += 2 /* Indom and Instance TOC */;
+        if ws.n_metrics > 0 {
+            ws.n_toc += 2 /* Metric and Value TOC */;
         }
 
         if ws.n_strings > 0 {
             ws.n_toc += 1 /* String TOC */;
+        }
+
+        if ws.n_indoms > 0 {
+            ws.n_toc += 2 /* Indom and Instance TOC */;
         }
 
         /*
@@ -263,12 +275,18 @@ impl Client {
         ws.instance_sec_off =
             ws.indom_sec_off
             + INDOM_BLOCK_LEN*ws.n_indoms;
+        
+        let (instance_blk_len, metric_blk_len) = match mmv {
+            MMV::V1 => (INSTANCE_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV1),
+            MMV::V2 => (INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV2)
+        };
+
         ws.metric_sec_off =
             ws.instance_sec_off
-            + INSTANCE_BLOCK_LEN*ws.n_instances;
+            + instance_blk_len*ws.n_instances;
         ws.value_sec_off =
             ws.metric_sec_off
-            + METRIC_BLOCK_LEN*ws.n_metrics;
+            + metric_blk_len*ws.n_metrics;
         ws.string_sec_off =
             ws.value_sec_off
             + VALUE_BLOCK_LEN*ws.n_values;
@@ -296,7 +314,7 @@ impl Client {
 
         ws.flags = self.flags.bits();
         ws.cluster_id = self.cluster_id;
-        write_mmv_header(&mut ws, &mut c)?;
+        write_mmv_header(&mut ws, &mut c, mmv)?;
 
         write_toc_block(1, ws.n_indoms as u32, ws.indom_sec_off, &mut c)?;
         write_toc_block(2, ws.n_instances as u32, ws.instance_sec_off, &mut c)?;
@@ -305,7 +323,7 @@ impl Client {
         write_toc_block(5, ws.n_strings as u32, ws.string_sec_off, &mut c)?;
 
         for m in metrics.iter_mut() {
-            m.write(&mut ws, &mut c)?;
+            m.write(&mut ws, &mut c, mmv)?;
         }
 
         // unlock header; has to be done last
@@ -326,11 +344,16 @@ impl Client {
     }
 }
 
-fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {    
+fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {    
     // MMV\0
     c.write_all(b"MMV\0")?;
+
     // version
-    c.write_u32::<Endian>(1)?;
+    match mmv {
+        MMV::V1 => c.write_u32::<Endian>(1)?,
+        MMV::V2 => c.write_u32::<Endian>(2)?
+    }
+
     // generation1
     ws.gen = time::now().to_timespec().sec;
     c.write_i64::<Endian>(ws.gen)?;
@@ -373,7 +396,7 @@ fn test_mmv_header() {
     let mut file = File::open(client.mmv_path()).unwrap();
     let mut header = Vec::new();
     assert!(
-        (HDR_LEN + 2*TOC_BLOCK_LEN) as usize
+        HDR_LEN as usize
         <= file.read_to_end(&mut header).unwrap()
     );
     
@@ -392,7 +415,7 @@ fn test_mmv_header() {
         cursor.read_i64::<Endian>().unwrap()
     );
     // test no. of toc blocks
-    assert!(2 <= cursor.read_i32::<Endian>().unwrap());
+    assert_eq!(0, cursor.read_i32::<Endian>().unwrap());
     // test flags
     assert_eq!(flags.bits(), cursor.read_u32::<Endian>().unwrap());
     // test pid

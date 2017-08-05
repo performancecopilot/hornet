@@ -14,13 +14,15 @@ use super::super::{
     Endian,
     ITEM_BIT_LEN,
     INDOM_BIT_LEN,
-    METRIC_NAME_MAX_LEN,
     STRING_BLOCK_LEN,
-    METRIC_BLOCK_LEN,
     VALUE_BLOCK_LEN,
     NUMERIC_VALUE_SIZE,
     INDOM_BLOCK_LEN,
-    INSTANCE_BLOCK_LEN
+    METRIC_NAME_MAX_LEN,
+    METRIC_BLOCK_LEN_MMV1,
+    INSTANCE_BLOCK_LEN_MMV1,
+    METRIC_BLOCK_LEN_MMV2,
+    INSTANCE_BLOCK_LEN_MMV2
 };
 
 mod private {
@@ -124,20 +126,26 @@ mod private {
         }
     }
 
+    #[derive(Copy, Clone)]
+    pub enum MMV {
+        V1,
+        V2
+    }
+
     /// MMV object that writes blocks to an MMV
     pub trait MMVWriter {
         private_decl!{}
 
         fn write(&mut self,
             writer_state: &mut MMVWriterState,
-            cursor: &mut io::Cursor<&mut [u8]>) -> io::Result<()>;
+            cursor: &mut io::Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()>;
 
-        fn register(&self, ws: &mut MMVWriterState);
+        fn register(&self, ws: &mut MMVWriterState, mmv: MMV);
     }
 }
 
 pub (super) use self::private::MetricType;
-pub (super) use self::private::{MMVWriter, MMVWriterState};
+pub (super) use self::private::{MMVWriter, MMVWriterState, MMV};
 
 macro_rules! impl_metric_type_for (
     ($typ:tt, $base_typ:tt, $type_code:expr) => (
@@ -527,9 +535,38 @@ impl<T: MetricType + Clone> Metric<T> {
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        if name.len() >= METRIC_NAME_MAX_LEN as usize {
-            return Err(format!("name longer than {} bytes", METRIC_NAME_MAX_LEN - 1));
+        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V1)
+    }
+
+    /// Creates a new PCP MMVv2 Metric.
+    ///
+    /// The value type for the metric is determined and fixed
+    /// at compile time.
+    ///
+    /// `name` length should not exceed 255 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
+    pub fn new2(
+        name: &str, init_val: T, sem: Semantics, unit: Unit, 
+        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+        
+        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V2)
+    }
+
+    fn new_common(
+        name: &str, init_val: T, sem: Semantics, unit: Unit, 
+        shorthelp_text: &str, longhelp_text: &str, mmv: MMV) -> Result<Self, String> {
+        
+        let name_max_len = match mmv {
+            MMV::V1 => METRIC_NAME_MAX_LEN,
+            MMV::V2 => STRING_BLOCK_LEN
+        } as usize;
+        if name.len() >= name_max_len {
+            return Err(format!("name longer than {} bytes", name_max_len - 1));
         }
+        
         if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
@@ -593,13 +630,38 @@ pub struct Indom {
 
 impl Indom {
     /// Creates a new instance domain with given instances, and short and long help text
+    ///
+    /// Each `instance` should not exceed 63 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+        Self::new_common(instances, shorthelp_text, longhelp_text, MMV::V1)
+    }
+
+    /// Creates a new instance domain with given instances, and short and long help text
+    ///
+    /// Each `instance` should not exceed 255 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
+    pub fn new2(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+        Self::new_common(instances, shorthelp_text, longhelp_text, MMV::V2)
+    }
+
+    pub fn new_common(instances: &[&str], shorthelp_text: &str, longhelp_text: &str, mmv: MMV) -> Result<Self, String> {
         let mut hasher = DefaultHasher::new();
         instances.hash(&mut hasher);
 
         for instance in instances {
-            if instance.len() >= METRIC_NAME_MAX_LEN as usize {
-                return Err(format!("instance longer than {} bytes", METRIC_NAME_MAX_LEN - 1));
+            let name_max_len = match mmv {
+                MMV::V1 => METRIC_NAME_MAX_LEN - 1,
+                MMV::V2 => STRING_BLOCK_LEN - 1
+            } as usize;
+            if instance.len() >= name_max_len {
+                return Err(format!("instance longer than {} bytes", name_max_len));
             }
         }
         if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
@@ -654,6 +716,12 @@ pub struct InstanceMetric<T> {
 impl<T: MetricType + Clone> InstanceMetric<T> {
     /// Creates an instance metric with given name, initial value,
     /// semantics, unit, and short and long help text
+    ///
+    /// `name` length should not exceed 63 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(
         indom: &Indom,
         name: &str,
@@ -662,6 +730,39 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         unit: Unit,
         shorthelp_text: &str,
         longhelp_text: &str) -> Result<Self, String> {
+
+        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V1)    
+    }
+
+    /// Creates an instance metric with given name, initial value,
+    /// semantics, unit, and short and long help text
+    ///
+    /// `name` length should not exceed 255 bytes
+    ///
+    /// `shorthelp_text` length should not exceed 255 bytes
+    ///
+    /// `longhelp_text` length should not exceed 255 bytes
+    pub fn new2(
+        indom: &Indom,
+        name: &str,
+        init_val: T,
+        sem: Semantics,
+        unit: Unit,
+        shorthelp_text: &str,
+        longhelp_text: &str) -> Result<Self, String> {
+
+        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V2)    
+    }
+
+    pub fn new_common(
+        indom: &Indom,
+        name: &str,
+        init_val: T,
+        sem: Semantics,
+        unit: Unit,
+        shorthelp_text: &str,
+        longhelp_text: &str,
+        mmv: MMV) -> Result<Self, String> {
 
         let mut vals = HashMap::with_capacity(indom.instances.len());
         let mut metric_name = name.to_owned();
@@ -678,7 +779,9 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
             metric_name.truncate(name.len() + 1);
         }
 
-        let mut metric = Metric::new(name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text)?;
+        let mut metric = Metric::new_common(
+            name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text, mmv
+        )?;
         metric.indom = indom.id;
         
         Ok(InstanceMetric {
@@ -722,19 +825,33 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
 
 impl<T: MetricType> Metric<T> {
     fn write_to_mmv(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-                write_value_blk: bool) -> io::Result<u64> {
+                 mmv: MMV, write_value_blk: bool) -> io::Result<u64> {
 
         let orig_pos = c.position();
 
         // metric block
+        let metric_blk_len = match mmv {
+            MMV::V1 => METRIC_BLOCK_LEN_MMV1,
+            MMV::V2 => METRIC_BLOCK_LEN_MMV2
+        };
         let metric_blk_off =
             ws.metric_sec_off
-            + ws.metric_blk_idx*METRIC_BLOCK_LEN;
+            + metric_blk_len*ws.metric_blk_idx;
         c.set_position(metric_blk_off);
+
         // name
-        c.write_all(self.name.as_bytes())?;
-        c.write_all(&[0])?;
-        c.set_position(metric_blk_off + METRIC_NAME_MAX_LEN);
+        match mmv {
+            MMV::V1 => {
+                c.write_all(self.name.as_bytes())?;
+                c.write_all(&[0])?;
+                c.set_position(metric_blk_off + METRIC_NAME_MAX_LEN);
+            },
+            MMV::V2 => {
+                let name_off = write_mmv_string(ws, c, &self.name, false)?;
+                c.write_u64::<Endian>(name_off)?;
+            }
+        }
+
         // item
         c.write_u32::<Endian>(self.item)?;
         // type code
@@ -748,15 +865,11 @@ impl<T: MetricType> Metric<T> {
         // zero pad
         c.write_u32::<Endian>(0)?;
         // short help
-        if self.shorthelp.len() > 0 {
-            let short_help_off = write_mmv_string(ws, c, &self.shorthelp, false)?;
-            c.write_u64::<Endian>(short_help_off)?;
-        }
+        let short_help_off = write_mmv_string(ws, c, &self.shorthelp, false)?;
+        c.write_u64::<Endian>(short_help_off)?;
         // long help
-        if self.longhelp.len() > 0 {
-            let long_help_off = write_mmv_string(ws, c, &self.longhelp, false)?;
-            c.write_u64::<Endian>(long_help_off)?;
-        }
+        let long_help_off = write_mmv_string(ws, c, &self.longhelp, false)?;
+        c.write_u64::<Endian>(long_help_off)?;
 
         if write_value_blk {
             let (value_offset, value_size) =
@@ -779,12 +892,12 @@ impl<T: MetricType> Metric<T> {
 impl<T: MetricType> MMVWriter for Metric<T> {
     private_impl!{}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
-        self.write_to_mmv(ws, c, true)?;
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {
+        self.write_to_mmv(ws, c, mmv, true)?;
         Ok(())
     }
 
-    fn register(&self, ws: &mut MMVWriterState) {
+    fn register(&self, ws: &mut MMVWriterState, mmv: MMV) {
         ws.n_metrics += 1;
         ws.n_values += 1;
 
@@ -794,18 +907,23 @@ impl<T: MetricType> MMVWriter for Metric<T> {
 
         cache_and_register_string(ws, &self.shorthelp);
         cache_and_register_string(ws, &self.longhelp);
+
+        match mmv {
+            MMV::V1 => {},
+            MMV::V2 => cache_and_register_string(ws, &self.name)
+        }
     }
 }
 
 impl<T: MetricType> MMVWriter for InstanceMetric<T> {
     private_impl!{}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {
         // write metric block
-        let metric_blk_off = self.metric.write_to_mmv(ws, c, false)?;
+        let metric_blk_off = self.metric.write_to_mmv(ws, c, mmv, false)?;
 
         // write indom and instances
-        let instance_blk_offs = write_indom_and_instances(ws, c, &self.indom)?;
+        let instance_blk_offs = write_indom_and_instances(ws, c, &self.indom, mmv)?;
 
         // write value blocks
         for ((_, instance), instance_blk_off) in self.vals.iter_mut().zip(instance_blk_offs) {
@@ -825,7 +943,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
         Ok(())
     }
 
-    fn register(&self, ws: &mut MMVWriterState) {
+    fn register(&self, ws: &mut MMVWriterState, mmv: MMV) {
         ws.n_metrics += 1;
         ws.n_values += self.vals.len() as u64;
 
@@ -842,12 +960,22 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
             ws.n_indoms += 1;
             ws.n_instances += self.indom.instances.len() as u64;
             ws.indom_cache.insert(self.indom.id, None);
+
+            match mmv {
+                MMV::V1 => {},
+                MMV::V2 => {
+                    cache_and_register_string(ws, &self.metric.name);
+                    for instance in &self.indom.instances {
+                        cache_and_register_string(ws, instance);
+                    }
+                }
+            }
         }
     }
 }
 
 fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-    indom: &Indom)-> io::Result<Vec<u64>> {
+    indom: &Indom, mmv: MMV)-> io::Result<Vec<u64>> {
 
     // write each indom and it's instances only once
     if let Some(blk_offs) = ws.indom_cache.get(&indom.id) {
@@ -865,23 +993,23 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
     c.write_u32::<Endian>(indom.id)?;
     // number of instances
     c.write_u32::<Endian>(indom.instance_count())?;
+
     // offset to instances
+    let instance_blk_len = match mmv {
+        MMV::V1 => INSTANCE_BLOCK_LEN_MMV1,
+        MMV::V2 => INSTANCE_BLOCK_LEN_MMV2
+    };
     let mut instance_blk_off =
         ws.instance_sec_off
-        + INSTANCE_BLOCK_LEN*ws.instance_idx;
+        + instance_blk_len*ws.instance_idx;
     c.write_u64::<Endian>(instance_blk_off)?;
+
     // short help
-    if indom.shorthelp().len() > 0 {
-        let short_help_off = 
-            write_mmv_string(ws, c, indom.shorthelp(), false)?;
-        c.write_u64::<Endian>(short_help_off)?;
-    }
+    let short_help_off = write_mmv_string(ws, c, indom.shorthelp(), false)?;
+    c.write_u64::<Endian>(short_help_off)?;
     // long help
-    if indom.longhelp().len() > 0 {
-        let long_help_off = 
-            write_mmv_string(ws, c, indom.longhelp(), false)?;
-        c.write_u64::<Endian>(long_help_off)?;
-    }
+    let long_help_off = write_mmv_string(ws, c, indom.longhelp(), false)?;
+    c.write_u64::<Endian>(long_help_off)?;
 
     // write instances and record their offsets
     let mut instance_blk_offs = Vec::with_capacity(indom.instances.len());
@@ -894,12 +1022,21 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
         c.write_u32::<Endian>(0)?;
         // instance id
         c.write_u32::<Endian>(Indom::instance_id(&instance))?;
+
         // instance
-        c.write_all(instance.as_bytes())?;
-        c.write_all(&[0])?;
+        match mmv {
+            MMV::V1 => {
+                c.write_all(instance.as_bytes())?;
+                c.write_all(&[0])?;
+            },
+            MMV::V2 => {
+                let instance_off = write_mmv_string(ws, c, instance, false)?;
+                c.write_u64::<Endian>(instance_off)?;
+            }
+        }
 
         instance_blk_offs.push(instance_blk_off);
-        instance_blk_off += INSTANCE_BLOCK_LEN;
+        instance_blk_off += instance_blk_len;
     }
 
     ws.instance_idx += instance_blk_offs.len() as u64;
@@ -985,6 +1122,10 @@ fn cache_and_register_string(ws: &mut MMVWriterState, string: &str) {
 // when writing first string in MMV, also writes the string TOC block
 fn write_mmv_string(ws: &mut MMVWriterState,
     c: &mut Cursor<&mut [u8]>, string: &str, is_value: bool) -> io::Result<u64> {
+
+    if string.len() == 0 {
+        return Ok(0);
+    }
 
     let orig_pos = c.position();
 
@@ -1097,30 +1238,65 @@ fn test_units() {
 fn test_invalid_metric_strings() {
     use rand::{thread_rng, Rng};
 
-    let invalid_name: String = thread_rng().gen_ascii_chars()
+    let invalid_name_v1: String = thread_rng().gen_ascii_chars()
         .take(METRIC_NAME_MAX_LEN as usize).collect();
-    let m1 = Metric::new(
-        &invalid_name,
-        0, Semantics::Discrete, Unit::new(), "", "",
-    );
-    assert!(m1.is_err());
+    let valid_name_v2 = &invalid_name_v1;
 
-    let invalid_shorthelp: String = thread_rng().gen_ascii_chars()
+    let invalid_name_v2: String = thread_rng().gen_ascii_chars()
         .take(STRING_BLOCK_LEN as usize).collect();
-    let m2 = Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(),
-        &invalid_shorthelp,
-        "",
-    );
-    assert!(m2.is_err());
+    let invalid_shorthelp = &invalid_name_v2;
+    let invalid_longhelp = &invalid_name_v2;
 
-    let invalid_longhelp: String = thread_rng().gen_ascii_chars()
-        .take(STRING_BLOCK_LEN as usize).collect();
-    let m3 = Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(), "",
-        &invalid_longhelp,
-    );
-    assert!(m3.is_err());
+    assert!(Metric::new(
+        &invalid_name_v1, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_err());
+    assert!(Metric::new2(
+        &valid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_ok());
+    assert!(Metric::new(
+        &invalid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_err());
+
+    assert!(Metric::new(
+        "", 0, Semantics::Discrete, Unit::new(), &invalid_shorthelp, ""
+    ).is_err());
+    assert!(Metric::new(
+        "", 0, Semantics::Discrete, Unit::new(), "", &invalid_longhelp
+    ).is_err());
+
+    assert!(Indom::new(
+        &[&invalid_name_v1], "", ""
+    ).is_err());
+    let indom = Indom::new2(
+        &[&valid_name_v2], "", ""
+    ).unwrap();
+    assert!(Indom::new2(
+        &[&invalid_name_v2], "", ""
+    ).is_err());
+
+    assert!(Indom::new(
+        &[], &invalid_shorthelp, ""
+    ).is_err());
+    assert!(Indom::new(
+        &[], "", &invalid_longhelp,
+    ).is_err());
+
+    assert!(InstanceMetric::new(
+        &indom, &invalid_name_v1, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_err());
+    assert!(InstanceMetric::new2(
+        &indom, &valid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_ok());
+    assert!(InstanceMetric::new2(
+        &indom, &invalid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
+    ).is_err());
+
+    assert!(InstanceMetric::new(
+        &indom, "", 0, Semantics::Discrete, Unit::new(), &invalid_shorthelp, ""
+    ).is_err());
+    assert!(InstanceMetric::new(
+        &indom, "", 0, Semantics::Discrete, Unit::new(), "", &invalid_longhelp
+    ).is_err());
 }
 
 #[test]
@@ -1147,6 +1323,7 @@ fn test_random_numeric_metrics() {
 
         let rnd_val1 = thread_rng().gen::<u32>();
 
+        println!("rnd_name.len() = {}", rnd_name.len());
         let mut metric = Metric::new(
             &rnd_name,
             rnd_val1,
