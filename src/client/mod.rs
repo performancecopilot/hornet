@@ -13,6 +13,7 @@ use std::path::{MAIN_SEPARATOR, Path, PathBuf};
 use std::str;
 use time;
 
+use super::mmv::Version;
 use super::{
     Endian,
     CLUSTER_ID_BIT_LEN,
@@ -28,7 +29,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{MMVWriter, MMVWriterState, MMV};
+use self::metric::{MMVWriter, MMVWriterState};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -219,18 +220,18 @@ impl Client {
     }
 
     pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
-        self.export_common(metrics, MMV::V1)
+        self.export_common(metrics, Version::V1)
     }
 
     pub fn export2(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
-        self.export_common(metrics, MMV::V2)
+        self.export_common(metrics, Version::V2)
     }
     
-    fn export_common(&self, metrics: &mut [&mut MMVWriter], mmv: MMV) -> io::Result<()> {
+    fn export_common(&self, metrics: &mut [&mut MMVWriter], mmv_ver: Version) -> io::Result<()> {
         let mut ws = MMVWriterState::new();
 
         for m in metrics.iter() {
-            m.register(&mut ws, mmv);
+            m.register(&mut ws, mmv_ver);
         }
 
         if ws.n_metrics > 0 {
@@ -276,9 +277,9 @@ impl Client {
             ws.indom_sec_off
             + INDOM_BLOCK_LEN*ws.n_indoms;
         
-        let (instance_blk_len, metric_blk_len) = match mmv {
-            MMV::V1 => (INSTANCE_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV1),
-            MMV::V2 => (INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV2)
+        let (instance_blk_len, metric_blk_len) = match mmv_ver {
+            Version::V1 => (INSTANCE_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV1),
+            Version::V2 => (INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV2)
         };
 
         ws.metric_sec_off =
@@ -314,7 +315,7 @@ impl Client {
 
         ws.flags = self.flags.bits();
         ws.cluster_id = self.cluster_id;
-        write_mmv_header(&mut ws, &mut c, mmv)?;
+        write_mmv_header(&mut ws, &mut c, mmv_ver)?;
 
         write_toc_block(1, ws.n_indoms as u32, ws.indom_sec_off, &mut c)?;
         write_toc_block(2, ws.n_instances as u32, ws.instance_sec_off, &mut c)?;
@@ -323,7 +324,7 @@ impl Client {
         write_toc_block(5, ws.n_strings as u32, ws.string_sec_off, &mut c)?;
 
         for m in metrics.iter_mut() {
-            m.write(&mut ws, &mut c, mmv)?;
+            m.write(&mut ws, &mut c, mmv_ver)?;
         }
 
         // unlock header; has to be done last
@@ -344,14 +345,14 @@ impl Client {
     }
 }
 
-fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {    
+fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {    
     // MMV\0
     c.write_all(b"MMV\0")?;
 
     // version
-    match mmv {
-        MMV::V1 => c.write_u32::<Endian>(1)?,
-        MMV::V2 => c.write_u32::<Endian>(2)?
+    match mmv_ver {
+        Version::V1 => c.write_u32::<Endian>(1)?,
+        Version::V2 => c.write_u32::<Endian>(2)?
     }
 
     // generation1

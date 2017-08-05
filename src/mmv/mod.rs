@@ -125,14 +125,6 @@ macro_rules! return_mmvdumperror (
     )
 );
 
-/// Trait for creating MMV structures by reading and parsing MMV bytes
-pub trait MMVReader {
-    /// Reads and parses MMV bytes from reader `r` and returns the
-    /// relevant structure
-    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError>
-        where Self: Sized;
-}
-
 /// Top-level MMV structure
 ///
 /// The various data blocks are stored in BTreeMaps; the key for each
@@ -165,13 +157,32 @@ impl MMV {
     pub fn instance_blks(&self) -> &BTreeMap<u64, InstanceBlk> { &self.instance_blks }
 }
 
+#[derive(Copy, Clone)]
+/// MMV version
+pub enum Version {
+    /// Version 1
+    V1 = 1,
+    /// Version 2
+    V2 = 2
+}
+
+impl Version {
+    pub fn from_u32(x: u32) -> Option<Self> {
+        match x {
+            1 => Some(Version::V1),
+            2 => Some(Version::V2),
+            _ => None
+        }
+    }
+}
+
 /// MMV header structure
 ///
 /// For reference to the C API, see
 /// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L95
 pub struct Header {
     pub magic: [u8; 4],
-    pub version: u32,
+    pub version: Version,
     pub gen1: i64,
     pub gen2: i64,
     pub toc_count: u32,
@@ -182,7 +193,7 @@ pub struct Header {
 
 impl Header {
     pub fn magic(&self) -> &[u8; 4] { &self.magic }
-    pub fn version(&self) -> u32 { self.version }
+    pub fn version(&self) -> Version { self.version }
     pub fn gen1(&self) -> i64 { self.gen1 }
     pub fn gen2(&self) -> i64 { self.gen2 }
     pub fn toc_count(&self) -> u32 { self.toc_count }
@@ -191,7 +202,7 @@ impl Header {
     pub fn cluster_id(&self) -> u32 { self.cluster_id }
 }
 
-impl MMVReader for Header {
+impl Header {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut magic = [0; 4];
         magic[0] = r.read_u8()?;
@@ -203,9 +214,12 @@ impl MMVReader for Header {
         }
 
         let version = r.read_u32::<Endian>()?;
-        if version != 1 && version != 2 {
-            return_mmvdumperror!("Invalid version number", version);
-        }
+        let mmv_ver = match Version::from_u32(version) {
+            Some(ver) => ver,
+            None => {
+                return_mmvdumperror!("Invalid version number", version);
+            }
+        };
 
         let gen1 = r.read_i64::<Endian>()?;
         let gen2 = r.read_i64::<Endian>()?;
@@ -228,7 +242,7 @@ impl MMVReader for Header {
 
         Ok(Header {
             magic: magic,
-            version: version,
+            version: mmv_ver,
             gen1: gen1,
             gen2: gen2,
             toc_count: toc_count,
@@ -259,7 +273,7 @@ impl TocBlk {
     pub fn sec_offset(&self) -> u64 { self.sec_offset }
 }
 
-impl MMVReader for TocBlk {
+impl TocBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let sec = r.read_u32::<Endian>()?;
         if sec > 5 {
@@ -283,12 +297,20 @@ impl MMVReader for TocBlk {
     }
 }
 
+/// String whose MMV representation depends on the MMV version
+pub enum VersionSpecificString {
+    /// MMV version 1 direct string
+    String(String),
+    /// MMV version 2 offset to string block
+    Offset(u64)
+}
+
 /// Metric block structure
 ///
 /// For reference to the C API, see
 /// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L64
 pub struct MetricBlk {
-    name: String,
+    name: VersionSpecificString,
     item: Option<u32>,
     typ: u32,
     sem: u32,
@@ -300,7 +322,7 @@ pub struct MetricBlk {
 }
 
 impl MetricBlk {
-    pub fn name(&self) -> &str { &self.name }
+    pub fn name(&self) -> &VersionSpecificString { &self.name }
     pub fn item(&self) -> &Option<u32> { &self.item }
     pub fn typ(&self) -> u32 { self.typ }
     pub fn sem(&self) -> u32 { self.sem }
@@ -311,14 +333,21 @@ impl MetricBlk {
     pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
 }
 
-impl MMVReader for MetricBlk {
-    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
-        let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
-        r.read_exact(&mut name_bytes)?;
-        let cstr = unsafe {
-            CStr::from_ptr(name_bytes.as_ptr() as *const i8)
+impl MetricBlk {
+    fn from_reader<R: ReadBytesExt>(r: &mut R, ver: Version) -> Result<Self, MMVDumpError> {
+        let name = match ver {
+            Version::V1 => {
+                let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+                r.read_exact(&mut name_bytes)?;
+                let cstr = unsafe {
+                    CStr::from_ptr(name_bytes.as_ptr() as *const i8)
+                };
+                VersionSpecificString::String(cstr.to_str()?.to_owned())
+            },
+            Version::V2 => {
+                VersionSpecificString::Offset(r.read_u64::<Endian>()?)
+            }
         };
-        let name = cstr.to_str()?.to_owned();
 
         let item = r.read_u32::<Endian>()?;
         let typ = r.read_u32::<Endian>()?;
@@ -378,7 +407,7 @@ impl ValueBlk {
     pub fn instance_offset(&self) -> &Option<u64> { &self.instance_offset }
 }
 
-impl MMVReader for ValueBlk {
+impl ValueBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let value = r.read_u64::<Endian>()?;
         let string_offset = r.read_u64::<Endian>()?;
@@ -423,7 +452,7 @@ impl IndomBlk {
     pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
 }
 
-impl MMVReader for IndomBlk {
+impl IndomBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let indom = r.read_u32::<Endian>()?;
         let instances = r.read_u32::<Endian>()?;
@@ -461,18 +490,18 @@ pub struct InstanceBlk {
     indom_offset: Option<u64>,
     pad: u32,
     internal_id: i32,
-    external_id: String
+    external_id: VersionSpecificString
 }
 
 impl InstanceBlk {
     pub fn indom_offset(&self) -> &Option<u64> { &self.indom_offset }
     pub fn pad(&self) -> u32 { self.pad }
     pub fn internal_id(&self) -> i32 { self.internal_id }
-    pub fn external_id(&self) -> &str { &self.external_id }
+    pub fn external_id(&self) -> &VersionSpecificString { &self.external_id }
 }
 
-impl MMVReader for InstanceBlk {
-    fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
+impl InstanceBlk {
+    fn from_reader<R: ReadBytesExt>(r: &mut R, ver: Version) -> Result<Self, MMVDumpError> {
         let indom_offset = r.read_u64::<Endian>()?;
 
         let pad = r.read_u32::<Endian>()?;
@@ -482,12 +511,20 @@ impl MMVReader for InstanceBlk {
 
         let internal_id = r.read_i32::<Endian>()?;
 
-        let mut external_id_bytes = [0; METRIC_NAME_MAX_LEN as usize];
-        r.read_exact(&mut external_id_bytes)?;
-        let cstr = unsafe {
-            CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
+        let external_id = match ver {
+            Version::V1 => {
+                let mut external_id_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+                r.read_exact(&mut external_id_bytes)?;
+                let cstr = unsafe {
+                    CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
+                };
+                VersionSpecificString::String(cstr.to_str()?.to_owned())
+            },
+            Version::V2 => {
+                VersionSpecificString::Offset(r.read_u64::<Endian>()?)
+            }
         };
-        let external_id = cstr.to_str()?.to_owned();
+        
 
         Ok(InstanceBlk {
             indom_offset: {
@@ -513,7 +550,7 @@ impl StringBlk {
     pub fn string(&self) -> &str { &self.string }
 }
 
-impl MMVReader for StringBlk {
+impl StringBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut bytes = [0; STRING_BLOCK_LEN as usize];
         r.read_exact(&mut bytes)?;
@@ -529,21 +566,38 @@ impl MMVReader for StringBlk {
 }
 
 macro_rules! blks_from_toc (
-    ($toc:expr, $blk_typ:tt, $cursor:expr) => (
+    ($toc:expr, $blk_typ:tt, $cursor:expr) => {
         if let Some(ref toc) = $toc {
             let mut blks = BTreeMap::new();
 
             $cursor.set_position(toc.sec_offset);
             for _ in 0..toc.entries as usize {
                 let blk_offset = $cursor.position();
-                blks.insert(blk_offset, $blk_typ::from_reader(&mut $cursor)?);
+                let blk = $blk_typ::from_reader(&mut $cursor)?;
+                blks.insert(blk_offset, blk);
             }
 
             blks
         } else {
             BTreeMap::new()
         }
-    )
+    };
+    ($toc:expr, $blk_typ:tt, $mmv_ver:expr, $cursor:expr) => {
+        if let Some(ref toc) = $toc {
+            let mut blks = BTreeMap::new();
+
+            $cursor.set_position(toc.sec_offset);
+            for _ in 0..toc.entries as usize {
+                let blk_offset = $cursor.position();
+                let blk = $blk_typ::from_reader(&mut $cursor, $mmv_ver)?;
+                blks.insert(blk_offset, blk);
+            }
+
+            blks
+        } else {
+            BTreeMap::new()
+        }
+    };
 );
 
 /// Returns an `MMV` structure by reading and parsing the MMV
@@ -584,8 +638,8 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     }
 
     let indom_blks = blks_from_toc!(indom_toc, IndomBlk, cursor);
-    let instance_blks = blks_from_toc!(instance_toc, InstanceBlk, cursor);
-    let metric_blks = blks_from_toc!(metric_toc, MetricBlk, cursor);
+    let instance_blks = blks_from_toc!(instance_toc, InstanceBlk, hdr.version, cursor);
+    let metric_blks = blks_from_toc!(metric_toc, MetricBlk, hdr.version, cursor);
     let value_blks = blks_from_toc!(value_toc, ValueBlk, cursor);
     let string_blks = blks_from_toc!(string_toc, StringBlk, cursor);
 

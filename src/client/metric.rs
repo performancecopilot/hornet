@@ -9,7 +9,7 @@ use std::io::{Write, Cursor};
 use std::mem;
 use std::str;
 
-use super::super::mmv::MTCode;
+use super::super::mmv::{MTCode, Version};
 use super::super::{
     Endian,
     ITEM_BIT_LEN,
@@ -126,11 +126,7 @@ mod private {
         }
     }
 
-    #[derive(Copy, Clone)]
-    pub enum MMV {
-        V1,
-        V2
-    }
+    use super::Version;
 
     /// MMV object that writes blocks to an MMV
     pub trait MMVWriter {
@@ -138,14 +134,14 @@ mod private {
 
         fn write(&mut self,
             writer_state: &mut MMVWriterState,
-            cursor: &mut io::Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()>;
+            cursor: &mut io::Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()>;
 
-        fn register(&self, ws: &mut MMVWriterState, mmv: MMV);
+        fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version);
     }
 }
 
 pub (super) use self::private::MetricType;
-pub (super) use self::private::{MMVWriter, MMVWriterState, MMV};
+pub (super) use self::private::{MMVWriter, MMVWriterState};
 
 macro_rules! impl_metric_type_for (
     ($typ:tt, $base_typ:tt, $type_code:expr) => (
@@ -535,7 +531,7 @@ impl<T: MetricType + Clone> Metric<T> {
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V1)
+        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V1)
     }
 
     /// Creates a new PCP MMVv2 Metric.
@@ -552,16 +548,16 @@ impl<T: MetricType + Clone> Metric<T> {
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
         shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
         
-        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V2)
+        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V2)
     }
 
     fn new_common(
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
-        shorthelp_text: &str, longhelp_text: &str, mmv: MMV) -> Result<Self, String> {
+        shorthelp_text: &str, longhelp_text: &str, mmv_ver: Version) -> Result<Self, String> {
         
-        let name_max_len = match mmv {
-            MMV::V1 => METRIC_NAME_MAX_LEN,
-            MMV::V2 => STRING_BLOCK_LEN
+        let name_max_len = match mmv_ver {
+            Version::V1 => METRIC_NAME_MAX_LEN,
+            Version::V2 => STRING_BLOCK_LEN
         } as usize;
         if name.len() >= name_max_len {
             return Err(format!("name longer than {} bytes", name_max_len - 1));
@@ -637,7 +633,7 @@ impl Indom {
     ///
     /// `longhelp_text` length should not exceed 255 bytes
     pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        Self::new_common(instances, shorthelp_text, longhelp_text, MMV::V1)
+        Self::new_common(instances, shorthelp_text, longhelp_text, Version::V1)
     }
 
     /// Creates a new instance domain with given instances, and short and long help text
@@ -648,17 +644,17 @@ impl Indom {
     ///
     /// `longhelp_text` length should not exceed 255 bytes
     pub fn new2(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        Self::new_common(instances, shorthelp_text, longhelp_text, MMV::V2)
+        Self::new_common(instances, shorthelp_text, longhelp_text, Version::V2)
     }
 
-    pub fn new_common(instances: &[&str], shorthelp_text: &str, longhelp_text: &str, mmv: MMV) -> Result<Self, String> {
+    pub fn new_common(instances: &[&str], shorthelp_text: &str, longhelp_text: &str, mmv_ver: Version) -> Result<Self, String> {
         let mut hasher = DefaultHasher::new();
         instances.hash(&mut hasher);
 
         for instance in instances {
-            let name_max_len = match mmv {
-                MMV::V1 => METRIC_NAME_MAX_LEN - 1,
-                MMV::V2 => STRING_BLOCK_LEN - 1
+            let name_max_len = match mmv_ver {
+                Version::V1 => METRIC_NAME_MAX_LEN - 1,
+                Version::V2 => STRING_BLOCK_LEN - 1
             } as usize;
             if instance.len() >= name_max_len {
                 return Err(format!("instance longer than {} bytes", name_max_len));
@@ -731,7 +727,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         shorthelp_text: &str,
         longhelp_text: &str) -> Result<Self, String> {
 
-        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V1)    
+        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V1)    
     }
 
     /// Creates an instance metric with given name, initial value,
@@ -751,7 +747,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         shorthelp_text: &str,
         longhelp_text: &str) -> Result<Self, String> {
 
-        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, MMV::V2)    
+        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V2)    
     }
 
     pub fn new_common(
@@ -762,7 +758,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         unit: Unit,
         shorthelp_text: &str,
         longhelp_text: &str,
-        mmv: MMV) -> Result<Self, String> {
+        mmv_ver: Version) -> Result<Self, String> {
 
         let mut vals = HashMap::with_capacity(indom.instances.len());
         let mut metric_name = name.to_owned();
@@ -780,7 +776,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         }
 
         let mut metric = Metric::new_common(
-            name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text, mmv
+            name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text, mmv_ver
         )?;
         metric.indom = indom.id;
         
@@ -825,14 +821,14 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
 
 impl<T: MetricType> Metric<T> {
     fn write_to_mmv(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-                 mmv: MMV, write_value_blk: bool) -> io::Result<u64> {
+                 mmv_ver: Version, write_value_blk: bool) -> io::Result<u64> {
 
         let orig_pos = c.position();
 
         // metric block
-        let metric_blk_len = match mmv {
-            MMV::V1 => METRIC_BLOCK_LEN_MMV1,
-            MMV::V2 => METRIC_BLOCK_LEN_MMV2
+        let metric_blk_len = match mmv_ver {
+            Version::V1 => METRIC_BLOCK_LEN_MMV1,
+            Version::V2 => METRIC_BLOCK_LEN_MMV2
         };
         let metric_blk_off =
             ws.metric_sec_off
@@ -840,13 +836,13 @@ impl<T: MetricType> Metric<T> {
         c.set_position(metric_blk_off);
 
         // name
-        match mmv {
-            MMV::V1 => {
+        match mmv_ver {
+            Version::V1 => {
                 c.write_all(self.name.as_bytes())?;
                 c.write_all(&[0])?;
                 c.set_position(metric_blk_off + METRIC_NAME_MAX_LEN);
             },
-            MMV::V2 => {
+            Version::V2 => {
                 let name_off = write_mmv_string(ws, c, &self.name, false)?;
                 c.write_u64::<Endian>(name_off)?;
             }
@@ -892,12 +888,12 @@ impl<T: MetricType> Metric<T> {
 impl<T: MetricType> MMVWriter for Metric<T> {
     private_impl!{}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {
-        self.write_to_mmv(ws, c, mmv, true)?;
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.write_to_mmv(ws, c, mmv_ver, true)?;
         Ok(())
     }
 
-    fn register(&self, ws: &mut MMVWriterState, mmv: MMV) {
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
         ws.n_metrics += 1;
         ws.n_values += 1;
 
@@ -908,9 +904,9 @@ impl<T: MetricType> MMVWriter for Metric<T> {
         cache_and_register_string(ws, &self.shorthelp);
         cache_and_register_string(ws, &self.longhelp);
 
-        match mmv {
-            MMV::V1 => {},
-            MMV::V2 => cache_and_register_string(ws, &self.name)
+        match mmv_ver {
+            Version::V1 => {},
+            Version::V2 => cache_and_register_string(ws, &self.name)
         }
     }
 }
@@ -918,12 +914,12 @@ impl<T: MetricType> MMVWriter for Metric<T> {
 impl<T: MetricType> MMVWriter for InstanceMetric<T> {
     private_impl!{}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv: MMV) -> io::Result<()> {
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
         // write metric block
-        let metric_blk_off = self.metric.write_to_mmv(ws, c, mmv, false)?;
+        let metric_blk_off = self.metric.write_to_mmv(ws, c, mmv_ver, false)?;
 
         // write indom and instances
-        let instance_blk_offs = write_indom_and_instances(ws, c, &self.indom, mmv)?;
+        let instance_blk_offs = write_indom_and_instances(ws, c, &self.indom, mmv_ver)?;
 
         // write value blocks
         for ((_, instance), instance_blk_off) in self.vals.iter_mut().zip(instance_blk_offs) {
@@ -943,7 +939,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
         Ok(())
     }
 
-    fn register(&self, ws: &mut MMVWriterState, mmv: MMV) {
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
         ws.n_metrics += 1;
         ws.n_values += self.vals.len() as u64;
 
@@ -961,9 +957,9 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
             ws.n_instances += self.indom.instances.len() as u64;
             ws.indom_cache.insert(self.indom.id, None);
 
-            match mmv {
-                MMV::V1 => {},
-                MMV::V2 => {
+            match mmv_ver {
+                Version::V1 => {},
+                Version::V2 => {
                     cache_and_register_string(ws, &self.metric.name);
                     for instance in &self.indom.instances {
                         cache_and_register_string(ws, instance);
@@ -975,7 +971,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
 }
 
 fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-    indom: &Indom, mmv: MMV)-> io::Result<Vec<u64>> {
+    indom: &Indom, mmv_ver: Version)-> io::Result<Vec<u64>> {
 
     // write each indom and it's instances only once
     if let Some(blk_offs) = ws.indom_cache.get(&indom.id) {
@@ -995,9 +991,9 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
     c.write_u32::<Endian>(indom.instance_count())?;
 
     // offset to instances
-    let instance_blk_len = match mmv {
-        MMV::V1 => INSTANCE_BLOCK_LEN_MMV1,
-        MMV::V2 => INSTANCE_BLOCK_LEN_MMV2
+    let instance_blk_len = match mmv_ver {
+        Version::V1 => INSTANCE_BLOCK_LEN_MMV1,
+        Version::V2 => INSTANCE_BLOCK_LEN_MMV2
     };
     let mut instance_blk_off =
         ws.instance_sec_off
@@ -1024,12 +1020,12 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
         c.write_u32::<Endian>(Indom::instance_id(&instance))?;
 
         // instance
-        match mmv {
-            MMV::V1 => {
+        match mmv_ver {
+            Version::V1 => {
                 c.write_all(instance.as_bytes())?;
                 c.write_all(&[0])?;
             },
-            MMV::V2 => {
+            Version::V2 => {
                 let instance_off = write_mmv_string(ws, c, instance, false)?;
                 c.write_u64::<Endian>(instance_off)?;
             }
@@ -1190,7 +1186,7 @@ fn test_instance_metrics() {
     ).unwrap();
 
     Client::new("system").unwrap()
-        .export(&mut [&mut cache_sizes, &mut cpu]).unwrap();
+        .export2(&mut [&mut cache_sizes, &mut cpu]).unwrap();
 
     assert!(cache_sizes.set_val("L3", 8192).is_some());
     assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
