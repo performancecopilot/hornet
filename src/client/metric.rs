@@ -1216,14 +1216,58 @@ fn test_mmv2_string_check() {
     let mmv2_indom = Indom::new(&[&mmv1_string, &mmv2_string], "", "").unwrap();
     assert_eq!(mmv2_indom.has_mmv2_string(), true);
 
-    let mmv1_instance = InstanceMetric::new(&mmv1_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
-    assert_eq!(mmv1_instance.has_mmv2_string(), false);
-    let mmv2_instance = InstanceMetric::new(&mmv2_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
-    assert_eq!(mmv2_instance.has_mmv2_string(), true);
-    let mmv2_instance = InstanceMetric::new(&mmv1_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
-    assert_eq!(mmv2_instance.has_mmv2_string(), true);
-    let mmv2_instance = InstanceMetric::new(&mmv2_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
-    assert_eq!(mmv2_instance.has_mmv2_string(), true);
+    let mmv1_im = InstanceMetric::new(&mmv1_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv1_im.has_mmv2_string(), false);
+    let mmv2_im = InstanceMetric::new(&mmv2_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_im.has_mmv2_string(), true);
+    let mmv2_im = InstanceMetric::new(&mmv1_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_im.has_mmv2_string(), true);
+    let mmv2_im = InstanceMetric::new(&mmv2_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_im.has_mmv2_string(), true);
+}
+
+#[test]
+fn test_mmv2_string_blocks() {
+    use super::super::mmv::*;
+    use rand::{thread_rng, Rng};
+    use super::Client;
+
+    let sem = Semantics::Discrete;
+    let unit = Unit::new();
+
+    let mmv2_string: String = thread_rng().gen_ascii_chars()
+        .take((STRING_BLOCK_LEN - 1) as usize).collect();
+
+    let mut metric = Metric::new(&mmv2_string, 0, sem, unit, "", "").unwrap();
+    let indom = Indom::new(&[&mmv2_string], "", "").unwrap();
+    let mut im = InstanceMetric::new(&indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
+
+    let client = Client::new("mmv2_string_blocks").unwrap();
+    client.export(&mut [&mut metric, &mut im]).unwrap();
+
+    let mmv = dump(client.mmv_path()).unwrap();
+    
+    for m_blk in mmv.metric_blks().values() {
+        match m_blk.name() {
+            &VersionSpecificString::String(ref s) =>
+                panic!("metric name \"{}\" should be in string section", s),
+            &VersionSpecificString::Offset(ref off) => {
+                let string = mmv.string_blks().get(off).unwrap().string();
+                assert_eq!(string, mmv2_string);
+            }
+        }
+    }
+
+    for i_blk in mmv.instance_blks().values() {
+        match i_blk.external_id() {
+            &VersionSpecificString::String(ref s) =>
+                panic!("instance \"{}\" should be in string section", s),
+            &VersionSpecificString::Offset(ref off) => {
+                let string = mmv.string_blks().get(off).unwrap().string();
+                assert_eq!(string, mmv2_string);
+            }
+        }
+    }
 }
 
 #[test]
