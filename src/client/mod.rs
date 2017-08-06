@@ -218,17 +218,17 @@ impl Client {
             mmv_path: mmv_path
         })
     }
-
-    pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
-        self.export_common(metrics, Version::V1)
-    }
-
-    pub fn export2(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
-        self.export_common(metrics, Version::V2)
-    }
     
-    fn export_common(&self, metrics: &mut [&mut MMVWriter], mmv_ver: Version) -> io::Result<()> {
+    pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
         let mut ws = MMVWriterState::new();
+
+        let mut mmv_ver = Version::V1;
+        for m in metrics.iter() {
+            if m.has_mmv2_string() {
+                mmv_ver = Version::V2;
+                break;
+            }
+        }
 
         for m in metrics.iter() {
             m.register(&mut ws, mmv_ver);

@@ -18,7 +18,7 @@ use super::super::{
     VALUE_BLOCK_LEN,
     NUMERIC_VALUE_SIZE,
     INDOM_BLOCK_LEN,
-    METRIC_NAME_MAX_LEN,
+    MMV1_NAME_MAX_LEN,
     METRIC_BLOCK_LEN_MMV1,
     INSTANCE_BLOCK_LEN_MMV1,
     METRIC_BLOCK_LEN_MMV2,
@@ -137,6 +137,8 @@ mod private {
             cursor: &mut io::Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()>;
 
         fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version);
+
+        fn has_mmv2_string(&self) -> bool;
     }
 }
 
@@ -517,56 +519,21 @@ lazy_static! {
 }
 
 impl<T: MetricType + Clone> Metric<T> {
-    /// Creates a new PCP MMV Metric.
+    /// Creates a new PCP MMV Metric
     ///
-    /// The value type for the metric is determined and fixed
-    /// at compile time.
-    ///
-    /// `name` length should not exceed 63 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
+    /// The result is an error if the length of `name`, `shorthelp`
+    /// or `longhelp` exceed 255 bytes.
     pub fn new(
         name: &str, init_val: T, sem: Semantics, unit: Unit, 
-        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+        shorthelp: &str, longhelp: &str) -> Result<Self, String> {
         
-        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V1)
-    }
-
-    /// Creates a new PCP MMVv2 Metric.
-    ///
-    /// The value type for the metric is determined and fixed
-    /// at compile time.
-    ///
-    /// `name` length should not exceed 255 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
-    pub fn new2(
-        name: &str, init_val: T, sem: Semantics, unit: Unit, 
-        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        
-        Self::new_common(name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V2)
-    }
-
-    fn new_common(
-        name: &str, init_val: T, sem: Semantics, unit: Unit, 
-        shorthelp_text: &str, longhelp_text: &str, mmv_ver: Version) -> Result<Self, String> {
-        
-        let name_max_len = match mmv_ver {
-            Version::V1 => METRIC_NAME_MAX_LEN,
-            Version::V2 => STRING_BLOCK_LEN
-        } as usize;
-        if name.len() >= name_max_len {
-            return Err(format!("name longer than {} bytes", name_max_len - 1));
+        if name.len() >= STRING_BLOCK_LEN as usize {
+            return Err(format!("name longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
-        
-        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
+        if shorthelp.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
-        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
+        if longhelp.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
 
@@ -580,8 +547,8 @@ impl<T: MetricType + Clone> Metric<T> {
             sem: sem,
             indom: 0,
             unit: unit.pmapi_repr,
-            shorthelp: shorthelp_text.to_owned(),
-            longhelp: longhelp_text.to_owned(),
+            shorthelp: shorthelp.to_owned(),
+            longhelp: longhelp.to_owned(),
             val: init_val,
             mmap_view: unsafe { SCRATCH_VIEW.clone() }
         })
@@ -625,53 +592,31 @@ pub struct Indom {
 }
 
 impl Indom {
-    /// Creates a new instance domain with given instances, and short and long help text
+    /// Creates a new instance domain
     ///
-    /// Each `instance` should not exceed 63 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
-    pub fn new(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        Self::new_common(instances, shorthelp_text, longhelp_text, Version::V1)
-    }
-
-    /// Creates a new instance domain with given instances, and short and long help text
-    ///
-    /// Each `instance` should not exceed 255 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
-    pub fn new2(instances: &[&str], shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        Self::new_common(instances, shorthelp_text, longhelp_text, Version::V2)
-    }
-
-    pub fn new_common(instances: &[&str], shorthelp_text: &str, longhelp_text: &str, mmv_ver: Version) -> Result<Self, String> {
+    /// The result is an error if the length of any `instance`, `shorthelp`
+    /// or `longhelp` exceed 255 bytes.
+    pub fn new(instances: &[&str], shorthelp: &str, longhelp: &str) -> Result<Self, String> {
         let mut hasher = DefaultHasher::new();
         instances.hash(&mut hasher);
 
         for instance in instances {
-            let name_max_len = match mmv_ver {
-                Version::V1 => METRIC_NAME_MAX_LEN - 1,
-                Version::V2 => STRING_BLOCK_LEN - 1
-            } as usize;
-            if instance.len() >= name_max_len {
-                return Err(format!("instance longer than {} bytes", name_max_len));
+            if instance.len() >= STRING_BLOCK_LEN as usize {
+                return Err(format!("instance longer than {} bytes", STRING_BLOCK_LEN - 1));
             }
         }
-        if shorthelp_text.len() >= STRING_BLOCK_LEN as usize {
+        if shorthelp.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
-        if longhelp_text.len() >= STRING_BLOCK_LEN as usize {
+        if longhelp.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
 
         Ok(Indom {
             instances: instances.into_iter().map(|inst| inst.to_string()).collect(),
             id: (hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1),
-            shorthelp: shorthelp_text.to_owned(),
-            longhelp: longhelp_text.to_owned()
+            shorthelp: shorthelp.to_owned(),
+            longhelp: longhelp.to_owned()
         })
     }
 
@@ -693,6 +638,12 @@ impl Indom {
         instance.hash(&mut hasher);
         hasher.finish() as u32
     }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.instances.iter().any(|instance|
+            instance.len() >= MMV1_NAME_MAX_LEN as usize
+        )
+    }
 }
 
 struct Instance<T> {
@@ -710,55 +661,18 @@ pub struct InstanceMetric<T> {
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
-    /// Creates an instance metric with given name, initial value,
-    /// semantics, unit, and short and long help text
+    /// Creates a new instance metric
     ///
-    /// `name` length should not exceed 63 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
+    /// The result is an error if the length of `name`, `shorthelp`
+    /// or `longhelp` exceed 255 bytes.
     pub fn new(
         indom: &Indom,
         name: &str,
         init_val: T,
         sem: Semantics,
         unit: Unit,
-        shorthelp_text: &str,
-        longhelp_text: &str) -> Result<Self, String> {
-
-        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V1)    
-    }
-
-    /// Creates an instance metric with given name, initial value,
-    /// semantics, unit, and short and long help text
-    ///
-    /// `name` length should not exceed 255 bytes
-    ///
-    /// `shorthelp_text` length should not exceed 255 bytes
-    ///
-    /// `longhelp_text` length should not exceed 255 bytes
-    pub fn new2(
-        indom: &Indom,
-        name: &str,
-        init_val: T,
-        sem: Semantics,
-        unit: Unit,
-        shorthelp_text: &str,
-        longhelp_text: &str) -> Result<Self, String> {
-
-        Self::new_common(indom, name, init_val, sem, unit, shorthelp_text, longhelp_text, Version::V2)    
-    }
-
-    pub fn new_common(
-        indom: &Indom,
-        name: &str,
-        init_val: T,
-        sem: Semantics,
-        unit: Unit,
-        shorthelp_text: &str,
-        longhelp_text: &str,
-        mmv_ver: Version) -> Result<Self, String> {
+        shorthelp: &str,
+        longhelp: &str) -> Result<Self, String> {
 
         let mut vals = HashMap::with_capacity(indom.instances.len());
         let mut metric_name = name.to_owned();
@@ -775,8 +689,8 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
             metric_name.truncate(name.len() + 1);
         }
 
-        let mut metric = Metric::new_common(
-            name, init_val.clone(), sem, unit, shorthelp_text, longhelp_text, mmv_ver
+        let mut metric = Metric::new(
+            name, init_val.clone(), sem, unit, shorthelp, longhelp
         )?;
         metric.indom = indom.id;
         
@@ -840,7 +754,7 @@ impl<T: MetricType> Metric<T> {
             Version::V1 => {
                 c.write_all(self.name.as_bytes())?;
                 c.write_all(&[0])?;
-                c.set_position(metric_blk_off + METRIC_NAME_MAX_LEN);
+                c.set_position(metric_blk_off + MMV1_NAME_MAX_LEN);
             },
             Version::V2 => {
                 let name_off = write_mmv_string(ws, c, &self.name, false)?;
@@ -909,6 +823,10 @@ impl<T: MetricType> MMVWriter for Metric<T> {
             Version::V2 => cache_and_register_string(ws, &self.name)
         }
     }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.name.len() >= MMV1_NAME_MAX_LEN as usize
+    }
 }
 
 impl<T: MetricType> MMVWriter for InstanceMetric<T> {
@@ -967,6 +885,10 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
                 }
             }
         }
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.metric.has_mmv2_string() || self.indom.has_mmv2_string()
     }
 }
 
@@ -1186,7 +1108,7 @@ fn test_instance_metrics() {
     ).unwrap();
 
     Client::new("system").unwrap()
-        .export2(&mut [&mut cache_sizes, &mut cpu]).unwrap();
+        .export(&mut [&mut cache_sizes, &mut cpu]).unwrap();
 
     assert!(cache_sizes.set_val("L3", 8192).is_some());
     assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
@@ -1231,68 +1153,77 @@ fn test_units() {
 }
 
 #[test]
-fn test_invalid_metric_strings() {
+fn test_invalid_strings() {
+    use rand::{thread_rng, Rng};
+    
+    let sem = Semantics::Discrete;
+    let unit = Unit::new();
+
+    let invalid_string: String = thread_rng().gen_ascii_chars()
+        .take(STRING_BLOCK_LEN as usize).collect();
+
+    assert!(Metric::new(
+        &invalid_string, 0, sem, unit, "", ""
+    ).is_err());
+    assert!(Metric::new(
+        "", 0, sem, unit, &invalid_string, ""
+    ).is_err());
+    assert!(Metric::new(
+        "", 0, sem, unit, "", &invalid_string
+    ).is_err());
+
+    assert!(Indom::new(
+        &[&invalid_string], "", ""
+    ).is_err());
+    assert!(Indom::new(
+        &[], &invalid_string, ""
+    ).is_err());
+    assert!(Indom::new(
+        &[], "", &invalid_string,
+    ).is_err());
+
+    let indom = Indom::new(&[], "", "").unwrap();
+    assert!(InstanceMetric::new(
+        &indom, &invalid_string, 0, sem, unit, "", ""
+    ).is_err());
+    assert!(InstanceMetric::new(
+        &indom, "", 0, sem, unit, &invalid_string, ""
+    ).is_err());
+    assert!(InstanceMetric::new(
+        &indom, "", 0, sem, unit, "", &invalid_string
+    ).is_err());
+}
+
+#[test]
+fn test_mmv2_string_check() {
     use rand::{thread_rng, Rng};
 
-    let invalid_name_v1: String = thread_rng().gen_ascii_chars()
-        .take(METRIC_NAME_MAX_LEN as usize).collect();
-    let valid_name_v2 = &invalid_name_v1;
+    let sem = Semantics::Discrete;
+    let unit = Unit::new();
 
-    let invalid_name_v2: String = thread_rng().gen_ascii_chars()
-        .take(STRING_BLOCK_LEN as usize).collect();
-    let invalid_shorthelp = &invalid_name_v2;
-    let invalid_longhelp = &invalid_name_v2;
+    let mmv1_string: String = thread_rng().gen_ascii_chars()
+        .take((MMV1_NAME_MAX_LEN - 1) as usize).collect();
+    let mmv2_string: String = thread_rng().gen_ascii_chars()
+        .take((STRING_BLOCK_LEN - 1) as usize).collect();
 
-    assert!(Metric::new(
-        &invalid_name_v1, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_err());
-    assert!(Metric::new2(
-        &valid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_ok());
-    assert!(Metric::new(
-        &invalid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_err());
+    let mmv1_metric = Metric::new(&mmv1_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv1_metric.has_mmv2_string(), false);
+    let mmv2_metric = Metric::new(&mmv2_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_metric.has_mmv2_string(), true);
 
-    assert!(Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(), &invalid_shorthelp, ""
-    ).is_err());
-    assert!(Metric::new(
-        "", 0, Semantics::Discrete, Unit::new(), "", &invalid_longhelp
-    ).is_err());
+    let mmv1_indom = Indom::new(&[&mmv1_string], "", "").unwrap();
+    assert_eq!(mmv1_indom.has_mmv2_string(), false);
+    let mmv2_indom = Indom::new(&[&mmv1_string, &mmv2_string], "", "").unwrap();
+    assert_eq!(mmv2_indom.has_mmv2_string(), true);
 
-    assert!(Indom::new(
-        &[&invalid_name_v1], "", ""
-    ).is_err());
-    let indom = Indom::new2(
-        &[&valid_name_v2], "", ""
-    ).unwrap();
-    assert!(Indom::new2(
-        &[&invalid_name_v2], "", ""
-    ).is_err());
-
-    assert!(Indom::new(
-        &[], &invalid_shorthelp, ""
-    ).is_err());
-    assert!(Indom::new(
-        &[], "", &invalid_longhelp,
-    ).is_err());
-
-    assert!(InstanceMetric::new(
-        &indom, &invalid_name_v1, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_err());
-    assert!(InstanceMetric::new2(
-        &indom, &valid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_ok());
-    assert!(InstanceMetric::new2(
-        &indom, &invalid_name_v2, 0, Semantics::Discrete, Unit::new(), "", ""
-    ).is_err());
-
-    assert!(InstanceMetric::new(
-        &indom, "", 0, Semantics::Discrete, Unit::new(), &invalid_shorthelp, ""
-    ).is_err());
-    assert!(InstanceMetric::new(
-        &indom, "", 0, Semantics::Discrete, Unit::new(), "", &invalid_longhelp
-    ).is_err());
+    let mmv1_instance = InstanceMetric::new(&mmv1_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv1_instance.has_mmv2_string(), false);
+    let mmv2_instance = InstanceMetric::new(&mmv2_indom, &mmv1_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_instance.has_mmv2_string(), true);
+    let mmv2_instance = InstanceMetric::new(&mmv1_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_instance.has_mmv2_string(), true);
+    let mmv2_instance = InstanceMetric::new(&mmv2_indom, &mmv2_string, 0, sem, unit, "", "").unwrap();
+    assert_eq!(mmv2_instance.has_mmv2_string(), true);
 }
 
 #[test]
@@ -1309,7 +1240,7 @@ fn test_random_numeric_metrics() {
     
     for _ in 1..n_metrics {
         let rnd_name: String = thread_rng().gen_ascii_chars()
-            .take(METRIC_NAME_MAX_LEN as usize - 1).collect();
+            .take(MMV1_NAME_MAX_LEN as usize - 1).collect();
 
         let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
             .take(STRING_BLOCK_LEN as usize - 1).collect();

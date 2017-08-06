@@ -71,7 +71,7 @@ impl fmt::Display for MTCode {
 
 use super::{
     Endian,
-    METRIC_NAME_MAX_LEN,
+    MMV1_NAME_MAX_LEN,
     STRING_BLOCK_LEN,
     CLUSTER_ID_BIT_LEN,
     ITEM_BIT_LEN,
@@ -337,7 +337,7 @@ impl MetricBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R, ver: Version) -> Result<Self, MMVDumpError> {
         let name = match ver {
             Version::V1 => {
-                let mut name_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+                let mut name_bytes = [0; MMV1_NAME_MAX_LEN as usize];
                 r.read_exact(&mut name_bytes)?;
                 let cstr = unsafe {
                     CStr::from_ptr(name_bytes.as_ptr() as *const i8)
@@ -513,7 +513,7 @@ impl InstanceBlk {
 
         let external_id = match ver {
             Version::V1 => {
-                let mut external_id_bytes = [0; METRIC_NAME_MAX_LEN as usize];
+                let mut external_id_bytes = [0; MMV1_NAME_MAX_LEN as usize];
                 r.read_exact(&mut external_id_bytes)?;
                 let cstr = unsafe {
                     CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
