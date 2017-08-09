@@ -66,7 +66,7 @@ fn write_instances(f: &mut fmt::Formatter, instance_toc: &TocBlk, mmv: &MMV) -> 
             },
             None => write!(f, "[(no indom)")?
         }
-        writeln!(f, "{} instance = [{} or \"{}\"]", offset, instance.internal_id(), instance.external_id())?;
+        writeln!(f, "/{}] instance = [{} or \"{}\"]", offset, instance.internal_id(), instance.external_id())?;
     }
 
     Ok(())
