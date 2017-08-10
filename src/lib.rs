@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate hdrsample;
 extern crate memmap;
 extern crate regex;
 extern crate time;
