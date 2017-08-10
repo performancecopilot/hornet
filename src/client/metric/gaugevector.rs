@@ -97,15 +97,19 @@ impl GaugeVector {
     pub fn indom(&self) -> &Indom { &self.indom }
 }
 
-impl AsRef<InstanceMetric<f64>> for GaugeVector {
-    fn as_ref(&self) -> &InstanceMetric<f64> {
-        &self.im
-    }
-}
+impl MMVWriter for GaugeVector {
+    private_impl!{}
 
-impl AsMut<InstanceMetric<f64>> for GaugeVector {
-    fn as_mut(&mut self) -> &mut InstanceMetric<f64> {
-        &mut self.im
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.im.write(ws, c, mmv_ver)
+    }
+
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
+        self.im.register(ws, mmv_ver)
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.im.has_mmv2_string()
     }
 }
 
@@ -124,9 +128,7 @@ pub fn test() {
     assert_eq!(gv.val("c").unwrap(), 1.5);
 
     Client::new("count_vector_test").unwrap()
-        .begin_all(1, 3, 1, 0).unwrap()
-        .register_instance_metric(&mut gv).unwrap()
-        .export().unwrap();
+        .export(&mut [&mut gv]).unwrap();
     
     gv.set("a", 2.5).unwrap().unwrap();
     assert_eq!(gv.val("a").unwrap(), 2.5);

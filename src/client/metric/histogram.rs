@@ -166,15 +166,19 @@ impl Histogram {
     pub fn hdr_histogram(&self) -> &HdrHist<u64> { &self.histogram }
 }
 
-impl AsRef<InstanceMetric<f64>> for Histogram {
-    fn as_ref(&self) -> &InstanceMetric<f64> {
-        &self.im
-    }
-}
+impl MMVWriter for Histogram {
+    private_impl!{}
 
-impl AsMut<InstanceMetric<f64>> for Histogram {
-    fn as_mut(&mut self) -> &mut InstanceMetric<f64> {
-        &mut self.im
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.im.write(ws, c, mmv_ver)
+    }
+
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
+        self.im.register(ws, mmv_ver)
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.im.has_mmv2_string()
     }
 }
 
@@ -196,9 +200,7 @@ pub fn test() {
     ).unwrap();
 
     Client::new("histogram_test").unwrap()
-        .begin_all(1, 4, 1, 0).unwrap()
-        .register_instance_metric(&mut hist).unwrap()
-        .export().unwrap();
+        .export(&mut [&mut hist]).unwrap();
     
     let val_range = Range::new(low, high);
     let mut rng = thread_rng();
