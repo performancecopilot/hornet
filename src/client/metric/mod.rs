@@ -2,6 +2,7 @@ use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use std::collections::HashSet;
 use std::collections::hash_map::{DefaultHasher, HashMap};
+use std::collections::hash_set::Iter;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -15,6 +16,26 @@ use super::super::{
     METRIC_NAME_MAX_LEN,
     STRING_BLOCK_LEN
 };
+
+mod counter;
+pub use self::counter::Counter;
+
+mod gauge;
+pub use self::gauge::Gauge;
+
+mod timer;
+pub use self::timer::Timer;
+
+mod countvector;
+pub use self::countvector::CountVector;
+
+mod gaugevector;
+pub use self::gaugevector::GaugeVector;
+
+mod histogram;
+pub use self::histogram::Histogram;
+pub use self::histogram::CreationError as HistCreationError;
+pub use self::histogram::RecordError as HistRecordError;
 
 mod private {
     use byteorder::WriteBytesExt;
@@ -403,6 +424,10 @@ pub struct Metric<T> {
     pub (super) mmap_view: MmapViewSync
 }
 
+impl<T> AsMut<Metric<T>> for Metric<T> {
+    fn as_mut(&mut self) -> &mut Metric<T> { self }
+}
+
 lazy_static! {
     static ref SCRATCH_VIEW: MmapViewSync = {
         Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite).unwrap()
@@ -525,6 +550,12 @@ impl Indom {
         self.instances.contains(instance)
     }
 
+    /// Returns an iterator visiting the instances in
+    /// arbitrary order
+    pub fn instances_iter(&self) -> Iter<String> {
+        self.instances.iter()
+    }
+
     pub fn shorthelp(&self) -> &str { &self.shorthelp }
     pub fn longhelp(&self) -> &str { &self.longhelp }
 
@@ -547,6 +578,10 @@ pub struct InstanceMetric<T> {
     pub (super) indom: Indom,
     pub (super) vals: HashMap<String, Instance<T>>,
     pub (super) metric: Metric<T>
+}
+
+impl<T> AsMut<InstanceMetric<T>> for InstanceMetric<T> {
+    fn as_mut(&mut self) -> &mut InstanceMetric<T> { self }
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {

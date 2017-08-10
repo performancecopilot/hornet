@@ -477,14 +477,20 @@ impl Client {
         c.write_u64::<Endian>(self.wi.value_sec_off)
     }
 
-    pub fn register_metric<T: MetricType + Clone>(&mut self, m: &mut Metric<T>) -> io::Result<&mut Client> {
+    pub fn register_metric<T: MetricType + Clone, M: AsMut<Metric<T>>>
+        (&mut self, mut metric: M) -> io::Result<&mut Client> {
+
         let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
         let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
-        self.register_metric_common(&mut c, m, true)?;
+        self.register_metric_common(&mut c, metric.as_mut(), true)?;
         Ok(self)
     }
 
-    pub fn register_instance_metric<T: MetricType + Clone>(&mut self, im: &mut InstanceMetric<T>) -> io::Result<&mut Client> {
+    pub fn register_instance_metric<T: MetricType + Clone, IM: AsMut<InstanceMetric<T>>>
+        (&mut self, mut im: IM) -> io::Result<&mut Client> {
+        
+        let im = im.as_mut();
+
         let mut mmap_view = unsafe { self.wi.mmap_view.as_mut().unwrap().clone() };
         let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
 
