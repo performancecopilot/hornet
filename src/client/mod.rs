@@ -219,6 +219,10 @@ impl Client {
         })
     }
     
+    /// Exports metrics to an MMV file at `mmv_path`
+    ///
+    /// If an MMV file is already present at `mmv_path`, it's overwritten
+    /// with the newer metrics.
     pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
         let mut ws = MMVWriterState::new();
 
