@@ -5,7 +5,7 @@ use std::mem;
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "Version    = {}", self.version())?;
+        writeln!(f, "Version    = {}", self.version() as u32)?;
         writeln!(f, "Generated  = {}", self.gen1())?;
         writeln!(f, "TOC count  = {}", self.toc_count())?;
         writeln!(f, "Cluster    = {}", self.cluster_id())?;
@@ -50,6 +50,17 @@ fn write_indoms(f: &mut fmt::Formatter, indom_toc: &TocBlk, mmv: &MMV) -> fmt::R
     Ok(())
 }
 
+// note: doesn't write newline at the end
+fn write_version_specific_string(f: &mut fmt::Formatter, string: &VersionSpecificString, mmv: &MMV) -> fmt::Result {
+    match string {
+        &VersionSpecificString::String(ref string) => write!(f, "{}", string),
+        &VersionSpecificString::Offset(ref offset) => {
+            let string = mmv.string_blks().get(offset).unwrap().string();
+            write!(f, "{}", string)
+        }
+    }
+}
+
 fn write_instances(f: &mut fmt::Formatter, instance_toc: &TocBlk, mmv: &MMV) -> fmt::Result {
     writeln!(f, "TOC[{}]: toc offset {}, instances offset {} ({} entries)",
         instance_toc._toc_index(), instance_toc._mmv_offset(), instance_toc.sec_offset(), instance_toc.entries())?;
@@ -66,7 +77,9 @@ fn write_instances(f: &mut fmt::Formatter, instance_toc: &TocBlk, mmv: &MMV) -> 
             },
             None => write!(f, "[(no indom)")?
         }
-        writeln!(f, "/{}] instance = [{} or \"{}\"]", offset, instance.internal_id(), instance.external_id())?;
+        write!(f, "/{}] instance = [{} or \"", offset, instance.internal_id())?;
+        write_version_specific_string(f, instance.external_id(), mmv)?;
+        writeln!(f, "\"]")?;
     }
 
     Ok(())
@@ -78,7 +91,9 @@ fn write_metrics(f: &mut fmt::Formatter, metric_toc: &TocBlk, mmv: &MMV) -> fmt:
 
     for (offset, metric) in mmv.metric_blks() {
         if let Some(item) = *metric.item() {
-            writeln!(f, "  [{}/{}] {}", item, offset, metric.name())?;
+            write!(f, "  [{}/{}] ", item, offset)?;
+            write_version_specific_string(f, metric.name(), mmv)?;
+            writeln!(f, "")?;
 
             write!(f, "      ")?;
             match MTCode::from_u32(metric.typ()) {
@@ -132,11 +147,14 @@ fn write_values(f: &mut fmt::Formatter, value_toc: &TocBlk, mmv: &MMV) -> fmt::R
         if let Some(ref metric_offset) = *value.metric_offset() {
             let metric = mmv.metric_blks().get(&metric_offset).unwrap();
             if let Some(item) = *metric.item() {
-                write!(f, "  [{}/{}] {}", item, offset, metric.name())?;
+                write!(f, "  [{}/{}] ", item, offset)?;
+                write_version_specific_string(f, metric.name(), mmv)?;
 
                 if let Some(ref instance_offset) = *value.instance_offset() {
                     let instance = mmv.instance_blks().get(&instance_offset).unwrap();
-                    write!(f, "[{} or \"{}\"]", instance.internal_id(), instance.external_id())?;
+                    write!(f, "[{} or \"", instance.internal_id())?;
+                    write_version_specific_string(f, instance.external_id(), mmv)?;
+                    write!(f, "\"]")?;
                 }
 
                 write!(f, " = ")?;

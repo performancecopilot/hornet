@@ -98,15 +98,19 @@ impl Timer {
     }
 }
 
-impl AsRef<Metric<i64>> for Timer {
-    fn as_ref(&self) -> &Metric<i64> {
-        &self.metric
-    }
-}
+impl MMVWriter for Timer {
+    private_impl!{}
 
-impl AsMut<Metric<i64>> for Timer {
-    fn as_mut(&mut self) -> &mut Metric<i64> {
-        &mut self.metric
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.metric.write(ws, c, mmv_ver)
+    }
+
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
+        self.metric.register(ws, mmv_ver)
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.metric.has_mmv2_string()
     }
 }
 
@@ -120,9 +124,7 @@ pub fn test() {
     assert_eq!(timer.elapsed(), 0);
 
     Client::new("timer_test").unwrap()
-        .begin_metrics(1).unwrap()
-        .register_metric(&mut timer).unwrap()
-        .export().unwrap();
+        .export(&mut [&mut timer]).unwrap();
 
     assert!(timer.stop().is_err());
     

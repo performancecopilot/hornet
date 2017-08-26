@@ -51,15 +51,19 @@ impl Counter {
     }
 }
 
-impl AsRef<Metric<u64>> for Counter {
-    fn as_ref(&self) -> &Metric<u64> {
-        &self.metric
-    }
-}
+impl MMVWriter for Counter {
+    private_impl!{}
 
-impl AsMut<Metric<u64>> for Counter {
-    fn as_mut(&mut self) -> &mut Metric<u64> {
-        &mut self.metric
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.metric.write(ws, c, mmv_ver)
+    }
+
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
+        self.metric.register(ws, mmv_ver)
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.metric.has_mmv2_string()
     }
 }
 
@@ -71,9 +75,7 @@ pub fn test() {
     assert_eq!(counter.val(), 1);
 
     Client::new("counter_test").unwrap()
-        .begin_metrics(1).unwrap()
-        .register_metric(&mut counter).unwrap()
-        .export().unwrap();
+        .export(&mut [&mut counter]).unwrap();
     
     counter.up().unwrap();
     assert_eq!(counter.val(), 2);

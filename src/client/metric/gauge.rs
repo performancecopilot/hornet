@@ -57,15 +57,19 @@ impl Gauge {
     }
 }
 
-impl AsRef<Metric<f64>> for Gauge {
-    fn as_ref(&self) -> &Metric<f64> {
-        &self.metric
-    }
-}
+impl MMVWriter for Gauge {
+    private_impl!{}
 
-impl AsMut<Metric<f64>> for Gauge {
-    fn as_mut(&mut self) -> &mut Metric<f64> {
-        &mut self.metric
+    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+        self.metric.write(ws, c, mmv_ver)
+    }
+
+    fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version) {
+        self.metric.register(ws, mmv_ver)
+    }
+
+    fn has_mmv2_string(&self) -> bool {
+        self.metric.has_mmv2_string()
     }
 }
 
@@ -77,9 +81,7 @@ pub fn test() {
     assert_eq!(gauge.val(), 1.5);
 
     Client::new("gauge_test").unwrap()
-        .begin_metrics(1).unwrap()
-        .register_metric(&mut gauge).unwrap()
-        .export().unwrap();
+        .export(&mut [&mut gauge]).unwrap();
     
     gauge.set(3.0).unwrap();
     assert_eq!(gauge.val(), 3.0);

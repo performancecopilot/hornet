@@ -16,14 +16,16 @@ const INDOM_BIT_LEN: usize = 22;
 const HDR_LEN: u64 = 40;
 const TOC_BLOCK_LEN: u64 = 16;
 const INDOM_BLOCK_LEN: u64 = 32;
-const INSTANCE_BLOCK_LEN: u64 = 80;
-const METRIC_BLOCK_LEN: u64 = 104;
 const VALUE_BLOCK_LEN: u64 = 32;
 const NUMERIC_VALUE_SIZE: usize = 8;
 const STRING_BLOCK_LEN: u64 = 256;
 
-const METRIC_NAME_MAX_LEN: u64 = 64;
-const MIN_STRINGS_PER_METRIC: u64 = 2;
+const INSTANCE_BLOCK_LEN_MMV1: u64 = 80;
+const METRIC_BLOCK_LEN_MMV1: u64 = 104;
+const MMV1_NAME_MAX_LEN: u64 = 64;
+
+const INSTANCE_BLOCK_LEN_MMV2: u64 = 24;
+const METRIC_BLOCK_LEN_MMV2: u64 = 48;
 
 type Endian = byteorder::LittleEndian;
 

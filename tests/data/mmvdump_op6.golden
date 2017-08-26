@@ -1,0 +1,50 @@
+Version    = 2
+Generated  = 1501952945
+TOC count  = 5
+Cluster    = 0
+Process    = 4579
+Flags      = process (0x2)
+
+TOC[0]: toc offset 40, indoms offset 120 (1 entries)
+  [369409/120] 3 instances, starting at offset 152
+      shorttext=Caches
+      longtext=Different levels of CPU caches
+
+TOC[1]: toc offset 56, instances offset 152 (3 entries)
+  [369409/152] instance = [-242639604 or "L2"]
+  [369409/176] instance = [-331227094 or "L1"]
+  [369409/200] instance = [-1524654670 or "L3"]
+
+TOC[2]: toc offset 72, metrics offset 224 (2 entries)
+  [36/224] cache_size
+      type=Int32 (0x0), sem=discrete (0x4), pad=0x0
+      unit=KiB (0x10010000)
+      indom=369409
+      shorttext=Cache sizes
+      longtext=Sizes of different CPU caches
+  [239/272] cpu
+      type=String (0x6), sem=discrete (0x4), pad=0x0
+      unit=(0x0)
+      (no indom)
+      shorttext=CPU family
+      (no longtext)
+
+TOC[3]: toc offset 88, values offset 320 (4 entries)
+  [36/320] cache_size[-242639604 or "L2"] = 8192
+  [36/352] cache_size[-331227094 or "L1"] = 0
+  [36/384] cache_size[-1524654670 or "L3"] = 0
+  [239/416] cpu = "kabylake"
+
+TOC[4]: toc offset 104, strings offset 448 (11 entries)
+  [1/448] cache_size
+  [2/704] Cache sizes
+  [3/960] Sizes of different CPU caches
+  [4/1216] Caches
+  [5/1472] Different levels of CPU caches
+  [6/1728] L2
+  [7/1984] L1
+  [8/2240] L3
+  [9/2496] cpu
+  [10/2752] CPU family
+  [11/3008] kabylake
+
