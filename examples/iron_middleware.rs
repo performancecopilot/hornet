@@ -1,10 +1,11 @@
 extern crate iron;
 extern crate hornet;
 
-use std::sync::{Mutex, Arc};
+use std::sync::Mutex;
 use hornet::client::Client;
 use hornet::client::metric::*;
 use iron::prelude::*;
+use iron::middleware::BeforeMiddleware;
 use iron::method::Method;
 use iron::status;
 
@@ -19,43 +20,63 @@ fn method_str(method: &Method) -> String {
     format!("{}", method)
 }
 
-fn main() {
-    let mut methods_count = CountVector::new(
-        "methods_count",
-        0,
-        &[
-            &method_str(&Method::Options),
-            &method_str(&Method::Get),
-            &method_str(&Method::Post),
-            &method_str(&Method::Put),
-            &method_str(&Method::Delete),
-            &method_str(&Method::Head),
-            &method_str(&Method::Trace),
-            &method_str(&Method::Connect)
-        ],
-        "Counts of recieved HTTP request methods", ""
-    ).unwrap();
+struct MethodCounter {
+    pub metric: Mutex<CountVector>
+}
 
-    let client = Client::new("localhost.methods").unwrap();
-    client.export(&mut [&mut methods_count]).unwrap();
+impl MethodCounter {
+    fn new() -> Self {
+        let metric = CountVector::new(
+            "methods_count",
+            0,
+            &[
+                &method_str(&Method::Options),
+                &method_str(&Method::Get),
+                &method_str(&Method::Post),
+                &method_str(&Method::Put),
+                &method_str(&Method::Delete),
+                &method_str(&Method::Head),
+                &method_str(&Method::Trace),
+                &method_str(&Method::Connect)
+            ],
+            "Counts of recieved HTTP request methods", "").unwrap();
+        
+        MethodCounter {
+            metric: Mutex::new(metric)
+        }
+    }
+}
 
-    let mut chain = Chain::new(|_: &mut Request| {
-        Ok(Response::with((status::Ok, "Hello World!")))
-    });
-
-    let mutex = Mutex::new(methods_count);
-    let arc = Arc::new(mutex);
-
-    chain.link_before(move |req: &mut Request| {
+impl BeforeMiddleware for MethodCounter {
+    fn before(&self, req: &mut Request) -> IronResult<()> {
         match &req.method {
             &Method::Extension(_) => {},
             _ => {
-                let mut counter = arc.lock().unwrap();
+                let mut counter = self.metric.lock().unwrap();
                 counter.up(&method_str(&req.method)).unwrap().unwrap();
             }
         }
         Ok(())
+    }
+
+    fn catch(&self, _: &mut Request, _: IronError) -> IronResult<()> {
+        Ok(())
+    }
+}
+
+fn main() {
+    let method_counter = MethodCounter::new();
+
+    let client = Client::new("localhost.methods").unwrap();
+    {
+        let mut metric = method_counter.metric.lock().unwrap();
+        client.export(&mut [&mut *metric]).unwrap();
+    }
+
+    let mut chain = Chain::new(|_: &mut Request| {
+        Ok(Response::with((status::Ok, "Hello World!")))
     });
+    chain.link_before(method_counter);
 
     println!("Listening on http://{}", URL);
     println!("Counter mapped at {}", client.mmv_path().to_str().unwrap());
