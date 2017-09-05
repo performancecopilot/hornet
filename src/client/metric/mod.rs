@@ -87,7 +87,7 @@ mod private {
         pub non_value_string_cache: HashMap<String, Option<u64>>, // (string, offset to it)
         // if the offset is None, it means the string hasn't been written yet
         //
-        pub indom_cache: HashMap<u32, Option<Vec<u64>>>, // (indom_id, offsets to it's instances)
+        pub indom_cache: HashMap<u32, Option<HashMap<String, u64>>>, // (indom_id, offsets to it's instances)
         // if the offsets vector is None, it means the instances haven't been written yet
 
         // offsets to blocks
@@ -710,18 +710,12 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         longhelp: &str) -> Result<Self, String> {
 
         let mut vals = HashMap::with_capacity(indom.instances.len());
-        let mut metric_name = name.to_owned();
-        metric_name.push('.');
         for instance_str in &indom.instances {
-            metric_name.push_str(instance_str);
-
             let instance = Instance {
                 val: init_val.clone(),
                 mmap_view: unsafe { SCRATCH_VIEW.clone() }
             };
             vals.insert(instance_str.to_owned(), instance);
-
-            metric_name.truncate(name.len() + 1);
         }
 
         let mut metric = Metric::new(
@@ -875,8 +869,9 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
         let instance_blk_offs = write_indom_and_instances(ws, c, &self.indom, mmv_ver)?;
 
         // write value blocks
-        for ((_, instance), instance_blk_off) in self.vals.iter_mut().zip(instance_blk_offs) {
+        for (instance_name, instance) in self.vals.iter_mut() {
 
+            let instance_blk_off = *instance_blk_offs.get(instance_name).unwrap();
             let (value_offset, value_size) =
                 write_value_block(ws, c, &instance.val, metric_blk_off, instance_blk_off)?;
 
@@ -887,6 +882,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
             let (_, value_mmap_view, _) =
                 three_way_split(mmap_view, value_offset, value_size)?;
             instance.mmap_view = value_mmap_view;
+            
         }
 
         Ok(())
@@ -928,7 +924,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
 }
 
 fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-    indom: &Indom, mmv_ver: Version)-> io::Result<Vec<u64>> {
+    indom: &Indom, mmv_ver: Version)-> io::Result<HashMap<String, u64>> {
 
     // write each indom and it's instances only once
     if let Some(blk_offs) = ws.indom_cache.get(&indom.id) {
@@ -965,7 +961,7 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
     c.write_u64::<Endian>(long_help_off)?;
 
     // write instances and record their offsets
-    let mut instance_blk_offs = Vec::with_capacity(indom.instances.len());
+    let mut instance_blk_offs = HashMap::with_capacity(indom.instances.len());
     for instance in &indom.instances {
         c.set_position(instance_blk_off);
 
@@ -988,7 +984,7 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
             }
         }
 
-        instance_blk_offs.push(instance_blk_off);
+        instance_blk_offs.insert(instance.to_owned(), instance_blk_off);
         instance_blk_off += instance_blk_len;
     }
 
@@ -1006,7 +1002,7 @@ fn three_way_split(view: MmapViewSync, mid_idx: usize, mid_len: usize) -> io::Re
     Ok((left_view, mid_view, right_view))
 }
 
-// writes `val` at end of value section, updates value count in value TOC,
+// writes `value` at end of value section, updates value count in value TOC,
 // and returns the offset `val` was written at and it's size - (offset, size)
 //
 // leaves the cursor in the original position it was at when passed
@@ -1329,7 +1325,6 @@ fn test_random_numeric_metrics() {
 
         let rnd_val1 = thread_rng().gen::<u32>();
 
-        println!("rnd_name.len() = {}", rnd_name.len());
         let mut metric = Metric::new(
             &rnd_name,
             rnd_val1,
