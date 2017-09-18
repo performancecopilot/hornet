@@ -212,22 +212,22 @@ pub fn test() {
     hist.record_n(val_range.ind_sample(&mut rng), n).unwrap();
 
     assert_eq!(
-        hist.im.val(MIN_INST).unwrap(),
+        *hist.im.val(MIN_INST).unwrap(),
         hist.histogram.min() as f64
     );
 
     assert_eq!(
-        hist.im.val(MAX_INST).unwrap(),
+        *hist.im.val(MAX_INST).unwrap(),
         hist.histogram.max() as f64
     );
 
     assert_eq!(
-        hist.im.val(MEAN_INST).unwrap(),
+        *hist.im.val(MEAN_INST).unwrap(),
         hist.histogram.mean()
     );
 
     assert_eq!(
-        hist.im.val(STDEV_INST).unwrap(),
+        *hist.im.val(STDEV_INST).unwrap(),
         hist.histogram.stdev()
     );
 }

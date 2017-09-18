@@ -70,14 +70,14 @@ impl CountVector {
 
     /// Returns the current count of the instance
     pub fn val(&self, instance: &str) -> Option<u64> {
-        self.im.val(instance)
+        self.im.val(instance).cloned()
     }
 
     /// Increments the count of the instance by the given value
     ///
     /// The wrapping `Option` is `None` if the instance wasn't found
     pub fn inc(&mut self, instance: &str, increment: u64) -> Option<io::Result<()>> {
-        self.im.val(instance).and_then(|val|
+        self.im.val(instance).cloned().and_then(|val|
             self.im.set_val(instance, val + increment)
         )
     }
@@ -92,7 +92,7 @@ impl CountVector {
     /// Increments the count of all instances by the given value
     pub fn inc_all(&mut self, increment: u64) -> io::Result<()> {
         for instance in self.indom.instances_iter() {
-            let val = self.im.val(instance).unwrap();
+            let val = self.im.val(instance).cloned().unwrap();
             self.im.set_val(instance, val + increment).unwrap()?;
         }
         Ok(())
