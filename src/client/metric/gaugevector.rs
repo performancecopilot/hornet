@@ -38,7 +38,7 @@ impl GaugeVector {
 
     /// Returns the current gauge of the instance
     pub fn val(&self, instance: &str) -> Option<f64> {
-        self.im.val(instance)
+        self.im.val(instance).cloned()
     }
 
     /// Sets the gauge of the instance
@@ -50,7 +50,7 @@ impl GaugeVector {
     ///
     /// The wrapping `Option` is `None` if the instance wasn't found
     pub fn inc(&mut self, instance: &str, increment: f64) -> Option<io::Result<()>> {
-        self.im.val(instance).and_then(|val|
+        self.im.val(instance).cloned().and_then(|val|
             self.im.set_val(instance, val + increment)
         )
     }
@@ -65,7 +65,7 @@ impl GaugeVector {
     /// Increments the gauge of all instances by the given value
     pub fn inc_all(&mut self, increment: f64) -> io::Result<()> {
         for instance in self.indom.instances_iter() {
-            let val = self.im.val(instance).unwrap();
+            let val = self.im.val(instance).cloned().unwrap();
             self.im.set_val(instance, val + increment).unwrap()?;
         }
         Ok(())

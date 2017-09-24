@@ -63,17 +63,17 @@ fn main() {
         let working_time = random::<u64>() % 3;
         thread::sleep(Duration::from_secs(working_time));
 
-        let count = counts.val(product).unwrap();
+        let count = *counts.val(product).unwrap();
         counts.set_val(product, count + 1).unwrap().unwrap();
 
-        let time = times.val(product).unwrap();
+        let time = *times.val(product).unwrap();
         times.set_val(product, time + 1).unwrap().unwrap();
 
         for i in 0..products.len() {
             if i != rnd_idx {
                 let queued_product = products[i];
 
-                let queue_time = queue_times.val(queued_product).unwrap();
+                let queue_time = *queue_times.val(queued_product).unwrap();
                 queue_times.set_val(queued_product, queue_time + 1).unwrap().unwrap();
             }
         }

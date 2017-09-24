@@ -30,7 +30,7 @@ impl Gauge {
 
     /// Returns the current value of the gauge
     pub fn val(&self) -> f64 {
-        self.metric.val()
+        *self.metric.val()
     }
 
     /// Sets the value of the gauge
@@ -40,13 +40,13 @@ impl Gauge {
 
     /// Increments the gauge by the given value
     pub fn inc(&mut self, increment: f64) -> io::Result<()> {
-        let val = self.metric.val();
+        let val = *self.metric.val();
         self.metric.set_val(val + increment)
     }
 
     /// Decrements the gauge by the given value
     pub fn dec(&mut self, decrement: f64) -> io::Result<()> {
-        let val = self.metric.val();
+        let val = *self.metric.val();
         self.metric.set_val(val - decrement)
     }
 

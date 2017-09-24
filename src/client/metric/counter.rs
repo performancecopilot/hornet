@@ -30,12 +30,12 @@ impl Counter {
 
     /// Returns the current value of the counter
     pub fn val(&self) -> u64 {
-        self.metric.val()
+        *self.metric.val()
     }
 
     /// Increments the counter by the given value
     pub fn inc(&mut self, increment: u64) -> io::Result<()> {
-        let val = self.metric.val();
+        let val = *self.metric.val();
         self.metric.set_val(val + increment)
     }
 
