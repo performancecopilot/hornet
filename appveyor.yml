@@ -1,43 +1,57 @@
 environment:
   matrix:
-    # Stable channel
+    # i686-pc-windows-gnu
     - TARGET: i686-pc-windows-gnu
       CHANNEL: stable
-    - TARGET: i686-pc-windows-msvc
-      CHANNEL: stable
+      MINGW_URL: https://s3.amazonaws.com/rust-lang-ci
+      MINGW_ARCHIVE: i686-4.9.2-release-win32-dwarf-rt_v4-rev4.7z
+      MINGW_DIR: mingw32
+    - TARGET: i686-pc-windows-gnu
+      CHANNEL: beta
+      MINGW_URL: https://s3.amazonaws.com/rust-lang-ci
+      MINGW_ARCHIVE: i686-4.9.2-release-win32-dwarf-rt_v4-rev4.7z
+      MINGW_DIR: mingw32
+    - TARGET: i686-pc-windows-gnu
+      CHANNEL: nightly
+      MINGW_URL: https://s3.amazonaws.com/rust-lang-ci
+      MINGW_ARCHIVE: i686-4.9.2-release-win32-dwarf-rt_v4-rev4.7z
+      MINGW_DIR: mingw32
+
+    # x86_64-pc-windows-gnu
     - TARGET: x86_64-pc-windows-gnu
       CHANNEL: stable
+      MSYS_BITS: 64
+    - TARGET: x86_64-pc-windows-gnu
+      CHANNEL: beta
+      MSYS_BITS: 64
+    - TARGET: x86_64-pc-windows-gnu
+      CHANNEL: nightly
+      MSYS_BITS: 64
+
+    # i686-pc-windows-msvc
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: stable
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: beta
+    - TARGET: i686-pc-windows-msvc
+      CHANNEL: nightly
+
+    # x86_64-pc-windows-msvc
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: stable
-    # Beta channel
-    - TARGET: i686-pc-windows-gnu
-      CHANNEL: beta
-    - TARGET: i686-pc-windows-msvc
-      CHANNEL: beta
-    - TARGET: x86_64-pc-windows-gnu
-      CHANNEL: beta
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: beta
-    # Nightly channel
-    - TARGET: i686-pc-windows-gnu
-      CHANNEL: nightly
-    - TARGET: i686-pc-windows-msvc
-      CHANNEL: nightly
-    - TARGET: x86_64-pc-windows-gnu
-      CHANNEL: nightly
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: nightly
 
 install:
   - appveyor-retry appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
   - rustup-init.exe --default-host %TARGET% --default-toolchain %CHANNEL% -y
-  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin;C:\msys64\usr\bin
-  - ps: >-
-      If ($Env:TARGET -eq 'x86_64-pc-windows-gnu') {
-        $Env:PATH += ';C:\msys64\mingw64\bin'
-      } ElseIf ($Env:TARGET -eq 'i686-pc-windows-gnu') {
-        $Env:PATH += ';C:\MinGW\bin'
-      }
+  - set PATH=%PATH%;C:\Users\appveyor\.cargo\bin
+  - if defined MSYS_BITS set PATH=C:\msys64\mingw%MSYS_BITS%\bin;C:\msys64\usr\bin;%PATH%
+  - if defined MINGW_URL appveyor DownloadFile %MINGW_URL%/%MINGW_ARCHIVE%
+  - if defined MINGW_URL 7z x -y %MINGW_ARCHIVE% > nul
+  - if defined MINGW_URL set PATH=C:\Python27;%CD%\%MINGW_DIR%\bin;C:\msys64\usr\bin;%PATH%
   - rustc -V
   - cargo -V
 
