@@ -78,7 +78,7 @@ impl Timer {
                     Time::Hour => duration.num_hours()
                 };
 
-                let val = self.metric.val();
+                let val = *self.metric.val();
                 self.metric.set_val(val + elapsed)?;
 
                 // we need to record the time elapsed even if stop()
@@ -96,7 +96,7 @@ impl Timer {
     /// Returns the cumulative time elapsed between every
     /// `start` and `stop` pair.
     pub fn elapsed(&mut self) -> i64 {
-        self.metric.val()
+        *self.metric.val()
     }
 }
 

@@ -532,10 +532,6 @@ pub struct Metric<T> {
     mmap_view: MmapViewSync
 }
 
-impl<T> AsMut<Metric<T>> for Metric<T> {
-    fn as_mut(&mut self) -> &mut Metric<T> { self }
-}
-
 lazy_static! {
     static ref SCRATCH_VIEW: MmapViewSync = {
         Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite).unwrap()
@@ -580,8 +576,8 @@ impl<T: MetricType + Clone> Metric<T> {
     }
 
     /// Returns the current value of the metric
-    pub fn val(&self) -> T {
-        self.val.clone()
+    pub fn val(&self) -> &T {
+        &self.val
     }    
 
     /// Sets the current value of the metric.
@@ -691,10 +687,6 @@ pub struct InstanceMetric<T> {
     metric: Metric<T>
 }
 
-impl<T> AsMut<InstanceMetric<T>> for InstanceMetric<T> {
-    fn as_mut(&mut self) -> &mut InstanceMetric<T> { self }
-}
-
 impl<T: MetricType + Clone> InstanceMetric<T> {
     /// Creates a new instance metric
     ///
@@ -741,8 +733,8 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
     }
 
     /// Returns the value of the given instance
-    pub fn val(&self, instance: &str) -> Option<T> {
-        self.vals.get(instance).map(|i| i.val.clone())
+    pub fn val(&self, instance: &str) -> Option<&T> {
+        self.vals.get(instance).map(|i| &i.val)
     }
 
     /// Sets the value of the given instance. If the instance isn't
@@ -1127,7 +1119,7 @@ fn test_instance_metrics() {
     assert!(cache_sizes.has_instance("L1"));
     assert!(!cache_sizes.has_instance("L4"));
 
-    assert_eq!(cache_sizes.val("L2").unwrap(), 0);
+    assert_eq!(*cache_sizes.val("L2").unwrap(), 0);
     assert!(cache_sizes.val("L5").is_none());
 
     let mut cpu = Metric::new(
@@ -1142,7 +1134,7 @@ fn test_instance_metrics() {
         .export(&mut [&mut cache_sizes, &mut cpu]).unwrap();
 
     assert!(cache_sizes.set_val("L3", 8192).is_some());
-    assert_eq!(cache_sizes.val("L3").unwrap(), 8192);
+    assert_eq!(*cache_sizes.val("L3").unwrap(), 8192);
     
     assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
@@ -1334,11 +1326,11 @@ fn test_random_numeric_metrics() {
             &rnd_longhelp,
         ).unwrap();
 
-        assert_eq!(metric.val(), rnd_val1);
+        assert_eq!(*metric.val(), rnd_val1);
 
         let rnd_val2 = thread_rng().gen::<u32>();
         assert!(metric.set_val(rnd_val2).is_ok());
-        assert_eq!(metric.val(), rnd_val2);
+        assert_eq!(*metric.val(), rnd_val2);
 
         metrics.push(metric);
         new_vals.push(thread_rng().gen::<u32>());
