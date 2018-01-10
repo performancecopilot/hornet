@@ -64,8 +64,6 @@ impl Timer {
     /// the timer was stopped too early or too late such that
     /// the internal nanosecond, microsecond or millisecond value
     /// over/under-flows, then elapsed time isn't updated.
-    /// 
-    /// Returns `0` if the timer wasn't started before.
     pub fn stop(&mut self) -> Result<i64, Error> {
         match self.start_time {
             Some(start_time) => {
@@ -83,7 +81,11 @@ impl Timer {
                 let val = *self.metric.val();
                 self.metric.set_val(val + elapsed)?;
 
-                self.start_time = None;
+                // we need to record the time elapsed even if stop()
+                // was called before a single unit of time_scale passed
+                if elapsed != 0 {
+                    self.start_time = None;
+                }
 
                 Ok(elapsed)
             },
