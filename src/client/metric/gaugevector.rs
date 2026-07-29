@@ -135,7 +135,7 @@ pub fn test() {
     assert_eq!(gv.val("b").unwrap(), 1.5);
     assert_eq!(gv.val("c").unwrap(), 1.5);
 
-    Client::new("count_vector_test")
+    Client::new("gauge_vector_test")
         .unwrap()
         .export(&mut [&mut gv])
         .unwrap();
