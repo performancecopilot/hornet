@@ -7,24 +7,29 @@ use super::*;
 /// `Count::One` scale, and `1` count dimension
 pub struct Gauge {
     metric: Metric<f64>,
-    init_val: f64
+    init_val: f64,
 }
 
 impl Gauge {
     /// Creates a new gauge metric with given initial value
-    pub fn new(name: &str, init_val: f64, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+    pub fn new(
+        name: &str,
+        init_val: f64,
+        shorthelp_text: &str,
+        longhelp_text: &str,
+    ) -> Result<Self, String> {
         let metric = Metric::new(
             name,
             init_val,
             Semantics::Instant,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
-            longhelp_text
+            longhelp_text,
         )?;
 
         Ok(Gauge {
             metric: metric,
-            init_val: init_val
+            init_val: init_val,
         })
     }
 
@@ -58,9 +63,14 @@ impl Gauge {
 }
 
 impl MMVWriter for Gauge {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         self.metric.write(ws, c, mmv_ver)
     }
 
@@ -80,9 +90,11 @@ pub fn test() {
     let mut gauge = Gauge::new("gauge", 1.5, "", "").unwrap();
     assert_eq!(gauge.val(), 1.5);
 
-    Client::new("gauge_test").unwrap()
-        .export(&mut [&mut gauge]).unwrap();
-    
+    Client::new("gauge_test")
+        .unwrap()
+        .export(&mut [&mut gauge])
+        .unwrap();
+
     gauge.set(3.0).unwrap();
     assert_eq!(gauge.val(), 3.0);
 

@@ -7,25 +7,17 @@ use std::fmt;
 use std::fs;
 use std::fs::{File, OpenOptions};
 use std::io;
-use std::io::{BufReader, Cursor};
 use std::io::prelude::*;
-use std::path::{MAIN_SEPARATOR, Path, PathBuf};
+use std::io::{BufReader, Cursor};
+use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::str;
 use time;
 
 use super::mmv::Version;
 use super::{
-    Endian,
-    CLUSTER_ID_BIT_LEN,
-    HDR_LEN,
-    TOC_BLOCK_LEN,
-    VALUE_BLOCK_LEN,
-    STRING_BLOCK_LEN,
-    INDOM_BLOCK_LEN,
-    METRIC_BLOCK_LEN_MMV1,
-    INSTANCE_BLOCK_LEN_MMV1,
-    METRIC_BLOCK_LEN_MMV2,
-    INSTANCE_BLOCK_LEN_MMV2,
+    Endian, CLUSTER_ID_BIT_LEN, HDR_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1,
+    INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, STRING_BLOCK_LEN,
+    TOC_BLOCK_LEN, VALUE_BLOCK_LEN,
 };
 
 pub mod metric;
@@ -60,21 +52,20 @@ fn osstr_from_bytes(slice: &[u8]) -> &OsStr {
 fn get_pcp_root() -> PathBuf {
     match env::var_os("PCP_DIR") {
         Some(val) => PathBuf::from(val),
-        None => PathBuf::from(MAIN_SEPARATOR.to_string())
+        None => PathBuf::from(MAIN_SEPARATOR.to_string()),
     }
 }
 
 fn init_pcp_conf(pcp_root: &Path) -> io::Result<()> {
     /* attempt to load variables from pcp_root/etc/pcp.conf into environment.
-       if pcp_root/etc/pcp.conf is not a file, can't be read, or parsing it
-       fails, we *don't* return the error */
+    if pcp_root/etc/pcp.conf is not a file, can't be read, or parsing it
+    fails, we *don't* return the error */
     parse_pcp_conf(pcp_root.join("etc").join("pcp.conf")).ok();
 
     /* attempt to load variables from pcp_root/$PCP_CONF into environment.
-       if pcp_root/$PCP_CONF is not a file, can't be read, or parsing it
-       fails, we *do* return the error */
-    let pcp_conf = pcp_root
-        .join(env::var_os("PCP_CONF").unwrap_or(OsString::new()));
+    if pcp_root/$PCP_CONF is not a file, can't be read, or parsing it
+    fails, we *do* return the error */
+    let pcp_conf = pcp_root.join(env::var_os("PCP_CONF").unwrap_or(OsString::new()));
     parse_pcp_conf(pcp_conf)
 }
 
@@ -83,7 +74,7 @@ fn parse_pcp_conf<P: AsRef<Path>>(conf_path: P) -> io::Result<()> {
     let mut buf_reader = BufReader::new(pcp_conf);
 
     /* According to man 5 pcp.conf, syntax rules for pcp.conf are
-        1. general syntax is PCP_VARIABLE_NAME=value to end of line 
+        1. general syntax is PCP_VARIABLE_NAME=value to end of line
         2. blank lines and lines begining with # are ignored
         3. variable names that aren't prefixed with PCP_ are silently ignored
         4. there should be no space between the variable name and the literal =
@@ -91,22 +82,19 @@ fn parse_pcp_conf<P: AsRef<Path>>(conf_path: P) -> io::Result<()> {
     */
     lazy_static! {
         static ref RE: Regex =
-            Regex::new("(?-u)^(PCP_[[:alnum:]_]+)=([^\"\'].*[^\"\'])\n$")
-                .unwrap();
+            Regex::new("(?-u)^(PCP_[[:alnum:]_]+)=([^\"\'].*[^\"\'])\n$").unwrap();
     }
 
     let mut line = Vec::new();
     while buf_reader.read_until(b'\n', &mut line)? > 0 {
         match RE.captures(&line) {
-            Some(caps) => {
-                match (caps.get(1), caps.get(2)) {
-                    (Some(key), Some(val)) => env::set_var(
-                        osstr_from_bytes(key.as_bytes()), 
-                        osstr_from_bytes(val.as_bytes()), 
-                    ),
-                    _ => {}
-                }
-            }
+            Some(caps) => match (caps.get(1), caps.get(2)) {
+                (Some(key), Some(val)) => env::set_var(
+                    osstr_from_bytes(key.as_bytes()),
+                    osstr_from_bytes(val.as_bytes()),
+                ),
+                _ => {}
+            },
             _ => {}
         }
         line.clear();
@@ -122,12 +110,11 @@ fn get_mmv_dir() -> io::Result<PathBuf> {
     mmv_dir.push(match env::var_os(PCP_TMP_DIR_KEY) {
         Some(val) => PathBuf::from(val),
         None => {
-
             init_pcp_conf(&pcp_root).ok();
 
             /* re-check if PCP_TMP_DIR is set after parsing (any) conf files
-               if not, default to OS-specific temp dir and set PCP_TMP_DIR
-               so we don't enter this block again */
+            if not, default to OS-specific temp dir and set PCP_TMP_DIR
+            so we don't enter this block again */
             match env::var_os(PCP_TMP_DIR_KEY) {
                 Some(val) => PathBuf::from(val),
                 None => {
@@ -161,12 +148,12 @@ impl fmt::Display for MMVFlags {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut prev_flag = false;
 
-        if self.contains(NOPREFIX)  {
+        if self.contains(NOPREFIX) {
             write!(f, "no prefix")?;
             prev_flag = true;
         }
 
-        if self.contains(PROCESS)  {
+        if self.contains(PROCESS) {
             if prev_flag {
                 write!(f, ",")?;
             }
@@ -174,7 +161,7 @@ impl fmt::Display for MMVFlags {
             prev_flag = true;
         }
 
-        if self.contains(SENTINEL)  {
+        if self.contains(SENTINEL) {
             if prev_flag {
                 write!(f, ",")?;
             }
@@ -194,7 +181,7 @@ impl fmt::Display for MMVFlags {
 pub struct Client {
     flags: MMVFlags,
     cluster_id: u32,
-    mmv_path: PathBuf
+    mmv_path: PathBuf,
 }
 
 impl Client {
@@ -207,18 +194,17 @@ impl Client {
     ///
     /// Note that only the 12 least significant bits of `cluster_id` will be
     /// used.
-    pub fn new_custom(name: &str, flags: MMVFlags, cluster_id: u32)
-    -> io::Result<Client> {
+    pub fn new_custom(name: &str, flags: MMVFlags, cluster_id: u32) -> io::Result<Client> {
         let mmv_path = get_mmv_dir()?.join(name);
         let cluster_id = cluster_id & ((1 << CLUSTER_ID_BIT_LEN) - 1);
 
         Ok(Client {
             flags: flags,
             cluster_id: cluster_id,
-            mmv_path: mmv_path
+            mmv_path: mmv_path,
         })
     }
-    
+
     /// Exports metrics to an MMV file at `mmv_path`
     ///
     /// If an MMV file is already present at `mmv_path`, it's overwritten
@@ -254,7 +240,7 @@ impl Client {
             MMV layout:
 
             -- MMV Header
-            
+
             -- Instance Domain TOC Block
             -- Instances TOC Block
             -- Metrics TOC Block
@@ -266,7 +252,7 @@ impl Client {
             -- Metrics section
             -- Values section
             -- Strings section
-            
+
             After writing, every metric is given ownership
             of the respective memory-mapped slice that contains
             the metric's value. This is to ensure that the metric
@@ -274,32 +260,21 @@ impl Client {
             it's value.
         */
 
-        let hdr_toc_len = HDR_LEN + TOC_BLOCK_LEN*ws.n_toc;
+        let hdr_toc_len = HDR_LEN + TOC_BLOCK_LEN * ws.n_toc;
 
         ws.indom_sec_off = hdr_toc_len;
-        ws.instance_sec_off =
-            ws.indom_sec_off
-            + INDOM_BLOCK_LEN*ws.n_indoms;
-        
+        ws.instance_sec_off = ws.indom_sec_off + INDOM_BLOCK_LEN * ws.n_indoms;
+
         let (instance_blk_len, metric_blk_len) = match mmv_ver {
             Version::V1 => (INSTANCE_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV1),
-            Version::V2 => (INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV2)
+            Version::V2 => (INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV2),
         };
 
-        ws.metric_sec_off =
-            ws.instance_sec_off
-            + instance_blk_len*ws.n_instances;
-        ws.value_sec_off =
-            ws.metric_sec_off
-            + metric_blk_len*ws.n_metrics;
-        ws.string_sec_off =
-            ws.value_sec_off
-            + VALUE_BLOCK_LEN*ws.n_values;
+        ws.metric_sec_off = ws.instance_sec_off + instance_blk_len * ws.n_instances;
+        ws.value_sec_off = ws.metric_sec_off + metric_blk_len * ws.n_metrics;
+        ws.string_sec_off = ws.value_sec_off + VALUE_BLOCK_LEN * ws.n_values;
 
-        let mmv_size = (
-            ws.string_sec_off
-            + STRING_BLOCK_LEN*ws.n_strings
-        ) as usize;
+        let mmv_size = (ws.string_sec_off + STRING_BLOCK_LEN * ws.n_strings) as usize;
 
         let mut file = OpenOptions::new()
             .read(true)
@@ -310,9 +285,7 @@ impl Client {
 
         file.write(&vec![0; mmv_size])?;
 
-        ws.mmap_view = Some(
-            Mmap::open(&file, Protection::ReadWrite)?.into_view_sync()
-        );
+        ws.mmap_view = Some(Mmap::open(&file, Protection::ReadWrite)?.into_view_sync());
 
         let mut mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
         let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
@@ -334,7 +307,7 @@ impl Client {
         // unlock header; has to be done last
         c.set_position(ws.gen2_off);
         c.write_i64::<Endian>(ws.gen)?;
-        
+
         Ok(())
     }
 
@@ -349,14 +322,18 @@ impl Client {
     }
 }
 
-fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {    
+fn write_mmv_header(
+    ws: &mut MMVWriterState,
+    c: &mut Cursor<&mut [u8]>,
+    mmv_ver: Version,
+) -> io::Result<()> {
     // MMV\0
     c.write_all(b"MMV\0")?;
 
     // version
     match mmv_ver {
         Version::V1 => c.write_u32::<Endian>(1)?,
-        Version::V2 => c.write_u32::<Endian>(2)?
+        Version::V2 => c.write_u32::<Endian>(2)?,
     }
 
     // generation1
@@ -375,7 +352,12 @@ fn write_mmv_header(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver:
     c.write_u32::<Endian>(ws.cluster_id)
 }
 
-fn write_toc_block(sec: u32, entries: u32, sec_off: u64, c: &mut Cursor<&mut [u8]>) -> io::Result<()> {
+fn write_toc_block(
+    sec: u32,
+    entries: u32,
+    sec_off: u64,
+    c: &mut Cursor<&mut [u8]>,
+) -> io::Result<()> {
     if entries > 0 {
         // section type
         c.write_u32::<Endian>(sec)?;
@@ -395,18 +377,15 @@ fn test_mmv_header() {
     let cluster_id = thread_rng().gen::<u32>();
     let flags = PROCESS | SENTINEL;
     let client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
-    
-    client.export(&mut[]).unwrap();
+
+    client.export(&mut []).unwrap();
 
     let mut file = File::open(client.mmv_path()).unwrap();
     let mut header = Vec::new();
-    assert!(
-        HDR_LEN as usize
-        <= file.read_to_end(&mut header).unwrap()
-    );
-    
+    assert!(HDR_LEN as usize <= file.read_to_end(&mut header).unwrap());
+
     let mut cursor = Cursor::new(header);
-    
+
     // test "MMV\0"
     assert_eq!('M' as u8, cursor.read_u8().unwrap());
     assert_eq!('M' as u8, cursor.read_u8().unwrap());
@@ -433,10 +412,8 @@ fn test_mmv_header() {
 fn test_mmv_dir() {
     let pcp_root = get_pcp_root();
     let mmv_dir = get_mmv_dir().unwrap();
-    let tmp_dir = PathBuf::from(
-        env::var_os(PCP_TMP_DIR_KEY)
-        .expect(&format!("{} not set", PCP_TMP_DIR_KEY))
-    );
+    let tmp_dir =
+        PathBuf::from(env::var_os(PCP_TMP_DIR_KEY).expect(&format!("{} not set", PCP_TMP_DIR_KEY)));
 
     assert!(mmv_dir.is_dir());
     assert_eq!(mmv_dir, pcp_root.join(tmp_dir).join(MMV_DIR_SUFFIX));
@@ -444,7 +421,7 @@ fn test_mmv_dir() {
 
 #[test]
 fn test_init_pcp_conf() {
-    let conf_keys = vec!(
+    let conf_keys = vec![
         "PCP_VERSION",
         "PCP_USER",
         "PCP_GROUP",
@@ -478,7 +455,7 @@ fn test_init_pcp_conf() {
         "PCP_TMPFILE_DIR",
         "PCP_DOC_DIR",
         "PCP_DEMOS_DIR",
-    );
+    ];
 
     let pcp_root = get_pcp_root();
     if init_pcp_conf(&pcp_root).is_ok() {

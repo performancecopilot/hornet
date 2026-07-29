@@ -1,14 +1,13 @@
-extern crate hornet; 
+extern crate hornet;
 extern crate rand;
 
-use hornet::client::Client;
 use hornet::client::metric::*;
+use hornet::client::Client;
 use rand::{thread_rng, Rng};
 use std::thread;
 use std::time::Duration;
 
 fn main() {
-    
     /* create three singleton metrics */
 
     let mut color = Metric::new(
@@ -18,17 +17,19 @@ fn main() {
         Unit::new(),
         "Color",
         "",
-    ).unwrap();
+    )
+    .unwrap();
 
     let hz = Unit::new().time(Time::Sec, -1).unwrap();
     let mut freq = Metric::new(
-        "frequency", // name (max 63 bytes)
+        "frequency",               // name (max 63 bytes)
         thread_rng().gen::<f64>(), // initial value
-        Semantics::Instant, // semantics
-        hz, // unit
-        "", // optional short description (max 255 bytes)
-        "", // optional long description (max 255 bytes)
-    ).unwrap();
+        Semantics::Instant,        // semantics
+        hz,                        // unit
+        "",                        // optional short description (max 255 bytes)
+        "",                        // optional long description (max 255 bytes)
+    )
+    .unwrap();
 
     let mut photons = Metric::new(
         "photons",
@@ -37,12 +38,15 @@ fn main() {
         Unit::new().count(Count::One, 1).unwrap(),
         "No. of photons",
         "Number of photons emitted by source",
-    ).unwrap();
+    )
+    .unwrap();
 
     /* create a client, register the metrics with it, and export them */
 
-    Client::new("physical_metrics").unwrap()
-        .export(&mut [&mut freq, &mut color, &mut photons]).unwrap();
+    Client::new("physical_metrics")
+        .unwrap()
+        .export(&mut [&mut freq, &mut color, &mut photons])
+        .unwrap();
 
     /* update metric values */
 
@@ -54,5 +58,4 @@ fn main() {
 
         thread::sleep(Duration::from_secs(1));
     }
-
 }

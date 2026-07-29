@@ -16,7 +16,7 @@ macro_rules! private_decl {
         /// impossible to implement outside the crate.
         #[doc(hidden)]
         fn __rayon_private__(&self) -> ::private::PrivateMarker;
-    }
+    };
 }
 
 macro_rules! private_impl {
@@ -24,5 +24,5 @@ macro_rules! private_impl {
         fn __rayon_private__(&self) -> ::private::PrivateMarker {
             ::private::PrivateMarker
         }
-    }
+    };
 }

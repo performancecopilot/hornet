@@ -8,7 +8,7 @@ use time::Tm;
 pub struct Timer {
     metric: Metric<i64>,
     time_scale: Time,
-    start_time: Option<Tm>
+    start_time: Option<Tm>,
 }
 
 /// Error encountered while starting or stopping a timer
@@ -30,22 +30,25 @@ impl From<io::Error> for Error {
 
 impl Timer {
     /// Creates a new timer metric with given time scale
-    pub fn new(name: &str, time_scale: Time,
-        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-
+    pub fn new(
+        name: &str,
+        time_scale: Time,
+        shorthelp_text: &str,
+        longhelp_text: &str,
+    ) -> Result<Self, String> {
         let metric = Metric::new(
             name,
             0,
             Semantics::Instant,
             Unit::new().time(time_scale, 1)?,
             shorthelp_text,
-            longhelp_text
+            longhelp_text,
         )?;
 
         Ok(Timer {
             metric: metric,
             time_scale: time_scale,
-            start_time: None
+            start_time: None,
         })
     }
 
@@ -53,7 +56,7 @@ impl Timer {
     /// already started.
     pub fn start(&mut self) -> Result<(), Error> {
         if self.start_time.is_some() {
-            return Err(Error::TimerAlreadyStarted)
+            return Err(Error::TimerAlreadyStarted);
         }
         self.start_time = Some(time::now());
         Ok(())
@@ -75,7 +78,7 @@ impl Timer {
                     Time::MSec => duration.num_microseconds().unwrap_or(0),
                     Time::Sec => duration.num_seconds(),
                     Time::Min => duration.num_minutes(),
-                    Time::Hour => duration.num_hours()
+                    Time::Hour => duration.num_hours(),
                 };
 
                 let val = *self.metric.val();
@@ -88,8 +91,8 @@ impl Timer {
                 }
 
                 Ok(elapsed)
-            },
-            None => Err(Error::TimerNotStarted)
+            }
+            None => Err(Error::TimerNotStarted),
         }
     }
 
@@ -101,9 +104,14 @@ impl Timer {
 }
 
 impl MMVWriter for Timer {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         self.metric.write(ws, c, mmv_ver)
     }
 
@@ -125,11 +133,13 @@ pub fn test() {
     let mut timer = Timer::new("timer", Time::MSec, "", "").unwrap();
     assert_eq!(timer.elapsed(), 0);
 
-    Client::new("timer_test").unwrap()
-        .export(&mut [&mut timer]).unwrap();
+    Client::new("timer_test")
+        .unwrap()
+        .export(&mut [&mut timer])
+        .unwrap();
 
     assert!(timer.stop().is_err());
-    
+
     let sleep_time = 2; // seconds
 
     timer.start().unwrap();

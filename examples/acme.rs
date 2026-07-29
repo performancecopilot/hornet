@@ -1,21 +1,21 @@
-extern crate hornet; 
+extern crate hornet;
 extern crate rand;
 
-use hornet::client::Client;
 use hornet::client::metric::*;
+use hornet::client::Client;
 use rand::random;
 use std::thread;
 use std::time::Duration;
 
 fn main() {
-
     let products = ["Anvils", "Rockets", "Giant_Rubber_Bands"];
     let indom = Indom::new(
         &products,
         "Acme products",
-        "Most popular products produced by the Acme Corporation"
-    ).unwrap();
-    
+        "Most popular products produced by the Acme Corporation",
+    )
+    .unwrap();
+
     /* create three instance metrics */
 
     let mut counts = InstanceMetric::new(
@@ -52,8 +52,10 @@ fn main() {
 
     /* create a client, register the metrics with it, and export them */
 
-    Client::new("acme").unwrap()
-        .export(&mut [&mut counts, &mut times, &mut queue_times]).unwrap();
+    Client::new("acme")
+        .unwrap()
+        .export(&mut [&mut counts, &mut times, &mut queue_times])
+        .unwrap();
 
     /* update metrics */
 
@@ -74,7 +76,10 @@ fn main() {
                 let queued_product = products[i];
 
                 let queue_time = *queue_times.val(queued_product).unwrap();
-                queue_times.set_val(queued_product, queue_time + 1).unwrap().unwrap();
+                queue_times
+                    .set_val(queued_product, queue_time + 1)
+                    .unwrap()
+                    .unwrap();
             }
         }
     }

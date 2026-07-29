@@ -1,9 +1,9 @@
-extern crate hornet;
 extern crate curl;
+extern crate hornet;
 
-use hornet::client::Client;
-use hornet::client::metric::*;
 use curl::easy::Easy;
+use hornet::client::metric::*;
+use hornet::client::Client;
 
 /*
     this example uses the Timer metric to measure time spent
@@ -13,18 +13,17 @@ use curl::easy::Easy;
 const URL: &'static str = "https://codeload.github.com/torvalds/linux/zip/master";
 
 fn main() {
-
-    let mut timer = Timer::new(
-        "time",
-        Time::Sec,
-        "Time elapsed downloading", "").unwrap();
+    let mut timer = Timer::new("time", Time::Sec, "Time elapsed downloading", "").unwrap();
 
     let mut bytes = Metric::new(
         "bytes",
         0,
         Semantics::Discrete,
         Unit::new().space(Space::Byte, 1).unwrap(),
-        "Bytes downloaded so far", "").unwrap();
+        "Bytes downloaded so far",
+        "",
+    )
+    .unwrap();
 
     let client = Client::new("download").unwrap();
     client.export(&mut [&mut timer, &mut bytes]).unwrap();
@@ -38,11 +37,11 @@ fn main() {
         timer.start().ok();
         bytes.set_val(bytes_downloaded as u64).unwrap();
         true
-    }).unwrap();
+    })
+    .unwrap();
 
     println!("Downloading from {}", URL);
     println!("Progress mapped at {}", client.mmv_path().to_str().unwrap());
 
     easy.perform().unwrap();
-
 }

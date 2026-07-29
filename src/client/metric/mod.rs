@@ -1,29 +1,20 @@
 use byteorder::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
-use std::collections::HashSet;
 use std::collections::hash_map::{DefaultHasher, HashMap};
 use std::collections::hash_set::Iter;
+use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::io;
-use std::io::{Write, Cursor};
+use std::io::{Cursor, Write};
 use std::mem;
 use std::str;
 
 use super::super::mmv::{MTCode, Version};
 use super::super::{
-    Endian,
-    ITEM_BIT_LEN,
-    INDOM_BIT_LEN,
-    STRING_BLOCK_LEN,
-    VALUE_BLOCK_LEN,
-    NUMERIC_VALUE_SIZE,
-    INDOM_BLOCK_LEN,
-    MMV1_NAME_MAX_LEN,
-    METRIC_BLOCK_LEN_MMV1,
-    INSTANCE_BLOCK_LEN_MMV1,
-    METRIC_BLOCK_LEN_MMV2,
-    INSTANCE_BLOCK_LEN_MMV2
+    Endian, INDOM_BIT_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1, INSTANCE_BLOCK_LEN_MMV2,
+    ITEM_BIT_LEN, METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, MMV1_NAME_MAX_LEN,
+    NUMERIC_VALUE_SIZE, STRING_BLOCK_LEN, VALUE_BLOCK_LEN,
 };
 
 mod counter;
@@ -42,8 +33,8 @@ mod gaugevector;
 pub use self::gaugevector::GaugeVector;
 
 mod histogram;
-pub use self::histogram::Histogram;
 pub use self::histogram::CreationError as HistCreationError;
+pub use self::histogram::Histogram;
 pub use self::histogram::RecordError as HistRecordError;
 
 mod private {
@@ -52,7 +43,7 @@ mod private {
 
     /// Generic type for any Metric's value
     pub trait MetricType {
-        private_decl!{}
+        private_decl! {}
 
         /// Returns the MMV metric type code
         fn type_code(&self) -> u32;
@@ -66,7 +57,7 @@ mod private {
 
     use memmap::MmapViewSync;
     use std::collections::HashMap;
-    
+
     pub struct MMVWriterState {
         // Mmap view of the entier MMV file
         pub mmap_view: Option<MmapViewSync>,
@@ -107,7 +98,7 @@ mod private {
 
         // mmv header data
         pub flags: u32,
-        pub cluster_id: u32
+        pub cluster_id: u32,
     }
 
     impl MMVWriterState {
@@ -142,7 +133,7 @@ mod private {
                 string_blk_idx: 0,
 
                 flags: 0,
-                cluster_id: 0
+                cluster_id: 0,
             }
         }
     }
@@ -151,11 +142,14 @@ mod private {
 
     /// MMV object that writes blocks to an MMV
     pub trait MMVWriter {
-        private_decl!{}
+        private_decl! {}
 
-        fn write(&mut self,
+        fn write(
+            &mut self,
             writer_state: &mut MMVWriterState,
-            cursor: &mut io::Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()>;
+            cursor: &mut io::Cursor<&mut [u8]>,
+            mmv_ver: Version,
+        ) -> io::Result<()>;
 
         fn register(&self, ws: &mut MMVWriterState, mmv_ver: Version);
 
@@ -163,8 +157,8 @@ mod private {
     }
 }
 
-pub (super) use self::private::MetricType;
-pub (super) use self::private::{MMVWriter, MMVWriterState};
+pub(super) use self::private::MetricType;
+pub(super) use self::private::{MMVWriter, MMVWriterState};
 
 macro_rules! impl_metric_type_for (
     ($typ:tt, $base_typ:tt, $type_code:expr) => (
@@ -197,7 +191,7 @@ impl_metric_type_for!(f32, u32, MTCode::F32);
 impl_metric_type_for!(f64, u64, MTCode::F64);
 
 impl MetricType for String {
-    private_impl!{}
+    private_impl! {}
 
     fn type_code(&self) -> u32 {
         MTCode::String as u32
@@ -214,7 +208,7 @@ impl MetricType for String {
 pub enum Space {
     /// byte
     Byte = 0,
-    /// kilobyte (1024 bytes) 
+    /// kilobyte (1024 bytes)
     KByte,
     /// megabyte (1024^2 bytes)
     MByte,
@@ -225,7 +219,7 @@ pub enum Space {
     /// petabyte (1024^5 bytes)
     PByte,
     /// exabyte (1024^6 bytes)
-    EByte
+    EByte,
 }
 
 impl Space {
@@ -238,7 +232,7 @@ impl Space {
             4 => Some(Space::TByte),
             5 => Some(Space::PByte),
             6 => Some(Space::EByte),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -252,7 +246,7 @@ impl fmt::Display for Space {
             Space::GByte => write!(f, "GiB"),
             Space::TByte => write!(f, "TiB"),
             Space::PByte => write!(f, "PiB"),
-            Space::EByte => write!(f, "EiB")
+            Space::EByte => write!(f, "EiB"),
         }
     }
 }
@@ -271,7 +265,7 @@ pub enum Time {
     /// minute
     Min,
     /// hour
-    Hour
+    Hour,
 }
 
 impl Time {
@@ -283,7 +277,7 @@ impl Time {
             3 => Some(Time::Sec),
             4 => Some(Time::Min),
             5 => Some(Time::Hour),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -304,14 +298,14 @@ impl fmt::Display for Time {
 #[derive(Copy, Clone)]
 /// Scale for the count component of a unit
 pub enum Count {
-    One = 0
+    One = 0,
 }
 
 impl Count {
     fn from_u8(x: u8) -> Option<Self> {
         match x {
             0 => Some(Count::One),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -319,7 +313,7 @@ impl Count {
 impl fmt::Display for Count {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            Count::One => write!(f, "count")
+            Count::One => write!(f, "count"),
         }
     }
 }
@@ -337,7 +331,7 @@ pub struct Unit {
              11 - 8  : count scale (unsigned)
               7 - 0  : zero pad
     */
-    pmapi_repr: u32
+    pmapi_repr: u32,
 }
 
 const SPACE_DIM_LSB: u8 = 28;
@@ -361,7 +355,7 @@ impl Unit {
     /// Returns a unit constructed from a raw PMAPI representation
     pub fn from_raw(pmapi_repr: u32) -> Self {
         Unit {
-            pmapi_repr: pmapi_repr
+            pmapi_repr: pmapi_repr,
         }
     }
 
@@ -419,10 +413,7 @@ impl Unit {
         to an i32 before we right shift it.
     */
     fn dim(&self, lsb: u8) -> i8 {
-        (
-            ( self.pmapi_repr << (32 - (lsb + 4)) ) as i32
-            >> 28
-        ) as i8
+        ((self.pmapi_repr << (32 - (lsb + 4))) as i32 >> 28) as i8
     }
 
     fn space_dim(&self) -> i8 {
@@ -490,11 +481,11 @@ impl fmt::Display for Unit {
 /// Semantic for a Metric
 pub enum Semantics {
     /// Counter
-    Counter  = 1,
+    Counter = 1,
     /// Instant
-    Instant  = 3,
+    Instant = 3,
     /// Discrete
-    Discrete = 4
+    Discrete = 4,
 }
 
 impl Semantics {
@@ -503,7 +494,7 @@ impl Semantics {
             1 => Some(Semantics::Counter),
             3 => Some(Semantics::Instant),
             4 => Some(Semantics::Discrete),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -513,7 +504,7 @@ impl fmt::Display for Semantics {
         match *self {
             Semantics::Counter => write!(f, "counter")?,
             Semantics::Instant => write!(f, "instant")?,
-            Semantics::Discrete => write!(f, "discrete")?
+            Semantics::Discrete => write!(f, "discrete")?,
         }
         write!(f, " (0x{:x})", *self as u32)
     }
@@ -529,12 +520,13 @@ pub struct Metric<T> {
     shorthelp: String,
     longhelp: String,
     val: T,
-    mmap_view: MmapViewSync
+    mmap_view: MmapViewSync,
 }
 
 lazy_static! {
     static ref SCRATCH_VIEW: MmapViewSync = {
-        Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite).unwrap()
+        Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite)
+            .unwrap()
             .into_view_sync()
     };
 }
@@ -545,17 +537,27 @@ impl<T: MetricType + Clone> Metric<T> {
     /// The result is an error if the length of `name`, `shorthelp`
     /// or `longhelp` exceed 255 bytes.
     pub fn new(
-        name: &str, init_val: T, sem: Semantics, unit: Unit, 
-        shorthelp: &str, longhelp: &str) -> Result<Self, String> {
-        
+        name: &str,
+        init_val: T,
+        sem: Semantics,
+        unit: Unit,
+        shorthelp: &str,
+        longhelp: &str,
+    ) -> Result<Self, String> {
         if name.len() >= STRING_BLOCK_LEN as usize {
             return Err(format!("name longer than {} bytes", STRING_BLOCK_LEN - 1));
         }
         if shorthelp.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+            return Err(format!(
+                "short help text longer than {} bytes",
+                STRING_BLOCK_LEN - 1
+            ));
         }
         if longhelp.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+            return Err(format!(
+                "long help text longer than {} bytes",
+                STRING_BLOCK_LEN - 1
+            ));
         }
 
         let mut hasher = DefaultHasher::new();
@@ -571,14 +573,14 @@ impl<T: MetricType + Clone> Metric<T> {
             shorthelp: shorthelp.to_owned(),
             longhelp: longhelp.to_owned(),
             val: init_val,
-            mmap_view: unsafe { SCRATCH_VIEW.clone() }
+            mmap_view: unsafe { SCRATCH_VIEW.clone() },
         })
     }
 
     /// Returns the current value of the metric
     pub fn val(&self) -> &T {
         &self.val
-    }    
+    }
 
     /// Sets the current value of the metric.
     ///
@@ -592,15 +594,31 @@ impl<T: MetricType + Clone> Metric<T> {
         self.val = new_val;
         Ok(())
     }
-    
-    pub fn name(&self) -> &str { &self.name }
-    pub fn item(&self) -> u32 { self.item }
-    pub fn type_code(&self) -> u32 { self.val.type_code() }
-    pub fn sem(&self) -> &Semantics { &self.sem }
-    pub fn unit(&self) -> u32 { self.unit }
-    pub fn indom(&self) -> u32 { self.indom }
-    pub fn shorthelp(&self) -> &str { &self.shorthelp }
-    pub fn longhelp(&self) -> &str { &self.longhelp }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn item(&self) -> u32 {
+        self.item
+    }
+    pub fn type_code(&self) -> u32 {
+        self.val.type_code()
+    }
+    pub fn sem(&self) -> &Semantics {
+        &self.sem
+    }
+    pub fn unit(&self) -> u32 {
+        self.unit
+    }
+    pub fn indom(&self) -> u32 {
+        self.indom
+    }
+    pub fn shorthelp(&self) -> &str {
+        &self.shorthelp
+    }
+    pub fn longhelp(&self) -> &str {
+        &self.longhelp
+    }
 }
 
 #[derive(Clone)]
@@ -609,7 +627,7 @@ pub struct Indom {
     instances: HashSet<String>,
     id: u32,
     shorthelp: String,
-    longhelp: String
+    longhelp: String,
 }
 
 impl Indom {
@@ -623,21 +641,30 @@ impl Indom {
 
         for instance in instances {
             if instance.len() >= STRING_BLOCK_LEN as usize {
-                return Err(format!("instance longer than {} bytes", STRING_BLOCK_LEN - 1));
+                return Err(format!(
+                    "instance longer than {} bytes",
+                    STRING_BLOCK_LEN - 1
+                ));
             }
         }
         if shorthelp.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("short help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+            return Err(format!(
+                "short help text longer than {} bytes",
+                STRING_BLOCK_LEN - 1
+            ));
         }
         if longhelp.len() >= STRING_BLOCK_LEN as usize {
-            return Err(format!("long help text longer than {} bytes", STRING_BLOCK_LEN - 1));
+            return Err(format!(
+                "long help text longer than {} bytes",
+                STRING_BLOCK_LEN - 1
+            ));
         }
 
         Ok(Indom {
             instances: instances.into_iter().map(|inst| inst.to_string()).collect(),
             id: (hasher.finish() as u32) & ((1 << INDOM_BIT_LEN) - 1),
             shorthelp: shorthelp.to_owned(),
-            longhelp: longhelp.to_owned()
+            longhelp: longhelp.to_owned(),
         })
     }
 
@@ -657,8 +684,12 @@ impl Indom {
         self.instances.iter()
     }
 
-    pub fn shorthelp(&self) -> &str { &self.shorthelp }
-    pub fn longhelp(&self) -> &str { &self.longhelp }
+    pub fn shorthelp(&self) -> &str {
+        &self.shorthelp
+    }
+    pub fn longhelp(&self) -> &str {
+        &self.longhelp
+    }
 
     fn instance_id(instance: &str) -> u32 {
         let mut hasher = DefaultHasher::new();
@@ -667,15 +698,15 @@ impl Indom {
     }
 
     fn has_mmv2_string(&self) -> bool {
-        self.instances.iter().any(|instance|
-            instance.len() >= MMV1_NAME_MAX_LEN as usize
-        )
+        self.instances
+            .iter()
+            .any(|instance| instance.len() >= MMV1_NAME_MAX_LEN as usize)
     }
 }
 
 struct Instance<T> {
     val: T,
-    mmap_view: MmapViewSync
+    mmap_view: MmapViewSync,
 }
 
 /// An instance metric is a set of related metrics with same
@@ -684,7 +715,7 @@ struct Instance<T> {
 pub struct InstanceMetric<T> {
     indom: Indom,
     vals: HashMap<String, Instance<T>>,
-    metric: Metric<T>
+    metric: Metric<T>,
 }
 
 impl<T: MetricType + Clone> InstanceMetric<T> {
@@ -699,26 +730,24 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         sem: Semantics,
         unit: Unit,
         shorthelp: &str,
-        longhelp: &str) -> Result<Self, String> {
-
+        longhelp: &str,
+    ) -> Result<Self, String> {
         let mut vals = HashMap::with_capacity(indom.instances.len());
         for instance_str in &indom.instances {
             let instance = Instance {
                 val: init_val.clone(),
-                mmap_view: unsafe { SCRATCH_VIEW.clone() }
+                mmap_view: unsafe { SCRATCH_VIEW.clone() },
             };
             vals.insert(instance_str.to_owned(), instance);
         }
 
-        let mut metric = Metric::new(
-            name, init_val.clone(), sem, unit, shorthelp, longhelp
-        )?;
+        let mut metric = Metric::new(name, init_val.clone(), sem, unit, shorthelp, longhelp)?;
         metric.indom = indom.id;
-        
+
         Ok(InstanceMetric {
             indom: indom.clone(),
             vals: vals,
-            metric: metric
+            metric: metric,
         })
     }
 
@@ -739,7 +768,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
 
     /// Sets the value of the given instance. If the instance isn't
     /// found, returns `None`.
-    pub fn set_val(&mut self, instance: &str, new_val: T) -> Option<io::Result<()>>  {
+    pub fn set_val(&mut self, instance: &str, new_val: T) -> Option<io::Result<()>> {
         self.vals.get_mut(instance).map(|i| {
             new_val.write(unsafe { &mut i.mmap_view.as_mut_slice() })?;
             i.val = new_val;
@@ -747,27 +776,39 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         })
     }
 
-    pub fn name(&self) -> &str { &self.metric.name }
-    pub fn sem(&self) -> &Semantics { &self.metric.sem }
-    pub fn unit(&self) -> u32 { self.metric.unit }
-    pub fn shorthelp(&self) -> &str { &self.metric.shorthelp }
-    pub fn longhelp(&self) -> &str { &self.metric.longhelp }
+    pub fn name(&self) -> &str {
+        &self.metric.name
+    }
+    pub fn sem(&self) -> &Semantics {
+        &self.metric.sem
+    }
+    pub fn unit(&self) -> u32 {
+        self.metric.unit
+    }
+    pub fn shorthelp(&self) -> &str {
+        &self.metric.shorthelp
+    }
+    pub fn longhelp(&self) -> &str {
+        &self.metric.longhelp
+    }
 }
 
 impl<T: MetricType> Metric<T> {
-    fn write_to_mmv(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-                 mmv_ver: Version, write_value_blk: bool) -> io::Result<u64> {
-
+    fn write_to_mmv(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+        write_value_blk: bool,
+    ) -> io::Result<u64> {
         let orig_pos = c.position();
 
         // metric block
         let metric_blk_len = match mmv_ver {
             Version::V1 => METRIC_BLOCK_LEN_MMV1,
-            Version::V2 => METRIC_BLOCK_LEN_MMV2
+            Version::V2 => METRIC_BLOCK_LEN_MMV2,
         };
-        let metric_blk_off =
-            ws.metric_sec_off
-            + metric_blk_len*ws.metric_blk_idx;
+        let metric_blk_off = ws.metric_sec_off + metric_blk_len * ws.metric_blk_idx;
         c.set_position(metric_blk_off);
 
         // name
@@ -776,7 +817,7 @@ impl<T: MetricType> Metric<T> {
                 c.write_all(self.name.as_bytes())?;
                 c.write_all(&[0])?;
                 c.set_position(metric_blk_off + MMV1_NAME_MAX_LEN);
-            },
+            }
             Version::V2 => {
                 let name_off = write_mmv_string(ws, c, &self.name, false)?;
                 c.write_u64::<Endian>(name_off)?;
@@ -806,11 +847,8 @@ impl<T: MetricType> Metric<T> {
             let (value_offset, value_size) =
                 write_value_block(ws, c, &self.val, metric_blk_off, 0)?;
 
-            let mmap_view = unsafe {
-                ws.mmap_view.as_mut().unwrap().clone()
-            };
-            let (_, value_mmap_view, _) =
-                three_way_split(mmap_view, value_offset, value_size)?;
+            let mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
+            let (_, value_mmap_view, _) = three_way_split(mmap_view, value_offset, value_size)?;
             self.mmap_view = value_mmap_view;
         }
 
@@ -821,9 +859,14 @@ impl<T: MetricType> Metric<T> {
 }
 
 impl<T: MetricType> MMVWriter for Metric<T> {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         self.write_to_mmv(ws, c, mmv_ver, true)?;
         Ok(())
     }
@@ -840,8 +883,8 @@ impl<T: MetricType> MMVWriter for Metric<T> {
         cache_and_register_string(ws, &self.longhelp);
 
         match mmv_ver {
-            Version::V1 => {},
-            Version::V2 => cache_and_register_string(ws, &self.name)
+            Version::V1 => {}
+            Version::V2 => cache_and_register_string(ws, &self.name),
         }
     }
 
@@ -851,9 +894,14 @@ impl<T: MetricType> MMVWriter for Metric<T> {
 }
 
 impl<T: MetricType> MMVWriter for InstanceMetric<T> {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         // write metric block
         let metric_blk_off = self.metric.write_to_mmv(ws, c, mmv_ver, false)?;
 
@@ -862,19 +910,14 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
 
         // write value blocks
         for (instance_name, instance) in self.vals.iter_mut() {
-
             let instance_blk_off = *instance_blk_offs.get(instance_name).unwrap();
             let (value_offset, value_size) =
                 write_value_block(ws, c, &instance.val, metric_blk_off, instance_blk_off)?;
 
             // set mmap_view for instance
-            let mmap_view = unsafe {
-                ws.mmap_view.as_mut().unwrap().clone()
-            };
-            let (_, value_mmap_view, _) =
-                three_way_split(mmap_view, value_offset, value_size)?;
+            let mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
+            let (_, value_mmap_view, _) = three_way_split(mmap_view, value_offset, value_size)?;
             instance.mmap_view = value_mmap_view;
-            
         }
 
         Ok(())
@@ -899,7 +942,7 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
             ws.indom_cache.insert(self.indom.id, None);
 
             match mmv_ver {
-                Version::V1 => {},
+                Version::V1 => {}
                 Version::V2 => {
                     cache_and_register_string(ws, &self.metric.name);
                     for instance in &self.indom.instances {
@@ -915,20 +958,21 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
     }
 }
 
-fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>,
-    indom: &Indom, mmv_ver: Version)-> io::Result<HashMap<String, u64>> {
-
+fn write_indom_and_instances<'a>(
+    ws: &mut MMVWriterState,
+    c: &mut Cursor<&mut [u8]>,
+    indom: &Indom,
+    mmv_ver: Version,
+) -> io::Result<HashMap<String, u64>> {
     // write each indom and it's instances only once
     if let Some(blk_offs) = ws.indom_cache.get(&indom.id) {
         if let &Some(ref blk_offs) = blk_offs {
-            return Ok(blk_offs.clone())
+            return Ok(blk_offs.clone());
         }
     }
 
     // write indom block
-    let indom_off =
-        ws.indom_sec_off
-        + INDOM_BLOCK_LEN*ws.indom_idx;
+    let indom_off = ws.indom_sec_off + INDOM_BLOCK_LEN * ws.indom_idx;
     c.set_position(indom_off);
     // indom id
     c.write_u32::<Endian>(indom.id)?;
@@ -938,11 +982,9 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
     // offset to instances
     let instance_blk_len = match mmv_ver {
         Version::V1 => INSTANCE_BLOCK_LEN_MMV1,
-        Version::V2 => INSTANCE_BLOCK_LEN_MMV2
+        Version::V2 => INSTANCE_BLOCK_LEN_MMV2,
     };
-    let mut instance_blk_off =
-        ws.instance_sec_off
-        + instance_blk_len*ws.instance_idx;
+    let mut instance_blk_off = ws.instance_sec_off + instance_blk_len * ws.instance_idx;
     c.write_u64::<Endian>(instance_blk_off)?;
 
     // short help
@@ -969,7 +1011,7 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
             Version::V1 => {
                 c.write_all(instance.as_bytes())?;
                 c.write_all(&[0])?;
-            },
+            }
             Version::V2 => {
                 let instance_off = write_mmv_string(ws, c, instance, false)?;
                 c.write_u64::<Endian>(instance_off)?;
@@ -988,7 +1030,11 @@ fn write_indom_and_instances<'a>(ws: &mut MMVWriterState, c: &mut Cursor<&mut [u
     Ok(cloned_offs)
 }
 
-fn three_way_split(view: MmapViewSync, mid_idx: usize, mid_len: usize) -> io::Result<(MmapViewSync, MmapViewSync, MmapViewSync)> {
+fn three_way_split(
+    view: MmapViewSync,
+    mid_idx: usize,
+    mid_len: usize,
+) -> io::Result<(MmapViewSync, MmapViewSync, MmapViewSync)> {
     let (left_view, mid_right_view) = view.split_at(mid_idx).unwrap();
     let (mid_view, right_view) = mid_right_view.split_at(mid_len).unwrap();
     Ok((left_view, mid_view, right_view))
@@ -998,15 +1044,16 @@ fn three_way_split(view: MmapViewSync, mid_idx: usize, mid_len: usize) -> io::Re
 // and returns the offset `val` was written at and it's size - (offset, size)
 //
 // leaves the cursor in the original position it was at when passed
-fn write_value_block<T: MetricType>(ws: &mut MMVWriterState,
-    mut c: &mut Cursor<&mut [u8]>, value: &T,
-    metric_blk_off: u64, instance_blk_off: u64) -> io::Result<(usize, usize)> {
-
+fn write_value_block<T: MetricType>(
+    ws: &mut MMVWriterState,
+    mut c: &mut Cursor<&mut [u8]>,
+    value: &T,
+    metric_blk_off: u64,
+    instance_blk_off: u64,
+) -> io::Result<(usize, usize)> {
     let orig_pos = c.position();
 
-    let value_blk_off =
-        ws.value_sec_off
-        + ws.value_blk_idx*VALUE_BLOCK_LEN;
+    let value_blk_off = ws.value_sec_off + ws.value_blk_idx * VALUE_BLOCK_LEN;
     ws.value_blk_idx += 1;
     c.set_position(value_blk_off);
 
@@ -1043,7 +1090,7 @@ fn write_value_block<T: MetricType>(ws: &mut MMVWriterState,
     c.write_u64::<Endian>(metric_blk_off)?;
     // offset to instance block
     c.write_u64::<Endian>(instance_blk_off)?;
-    
+
     c.set_position(orig_pos);
     Ok((value_offset, value_size))
 }
@@ -1061,19 +1108,20 @@ fn cache_and_register_string(ws: &mut MMVWriterState, string: &str) {
 // leaves the cursor in the original position it was at when passed
 //
 // when writing first string in MMV, also writes the string TOC block
-fn write_mmv_string(ws: &mut MMVWriterState,
-    c: &mut Cursor<&mut [u8]>, string: &str, is_value: bool) -> io::Result<u64> {
-
+fn write_mmv_string(
+    ws: &mut MMVWriterState,
+    c: &mut Cursor<&mut [u8]>,
+    string: &str,
+    is_value: bool,
+) -> io::Result<u64> {
     if string.len() == 0 {
         return Ok(0);
     }
 
     let orig_pos = c.position();
 
-    let string_block_off =
-        ws.string_sec_off
-        + STRING_BLOCK_LEN*ws.string_blk_idx;
-        
+    let string_block_off = ws.string_sec_off + STRING_BLOCK_LEN * ws.string_blk_idx;
+
     // only cache if the string is not a value
     if !is_value {
         if let Some(cached_offset) = ws.non_value_string_cache.get(string).clone() {
@@ -1082,7 +1130,8 @@ fn write_mmv_string(ws: &mut MMVWriterState,
             }
         }
 
-        ws.non_value_string_cache.insert(string.to_owned(), Some(string_block_off));
+        ws.non_value_string_cache
+            .insert(string.to_owned(), Some(string_block_off));
     }
 
     // write string in string section
@@ -1103,8 +1152,9 @@ fn test_instance_metrics() {
     let caches = Indom::new(
         &["L1", "L2", "L3"],
         "Caches",
-        "Different levels of CPU caches"
-    ).unwrap();
+        "Different levels of CPU caches",
+    )
+    .unwrap();
 
     let mut cache_sizes = InstanceMetric::new(
         &caches,
@@ -1113,8 +1163,9 @@ fn test_instance_metrics() {
         Semantics::Discrete,
         Unit::new().space(Space::KByte, 1).unwrap(),
         "Cache sizes",
-        "Sizes of different CPU caches"
-    ).unwrap();
+        "Sizes of different CPU caches",
+    )
+    .unwrap();
 
     assert!(cache_sizes.has_instance("L1"));
     assert!(!cache_sizes.has_instance("L4"));
@@ -1127,15 +1178,19 @@ fn test_instance_metrics() {
         String::from("kabylake"),
         Semantics::Discrete,
         Unit::new(),
-        "CPU family", "",
-    ).unwrap();
+        "CPU family",
+        "",
+    )
+    .unwrap();
 
-    Client::new("system").unwrap()
-        .export(&mut [&mut cache_sizes, &mut cpu]).unwrap();
+    Client::new("system")
+        .unwrap()
+        .export(&mut [&mut cache_sizes, &mut cpu])
+        .unwrap();
 
     assert!(cache_sizes.set_val("L3", 8192).is_some());
     assert_eq!(*cache_sizes.val("L3").unwrap(), 8192);
-    
+
     assert!(cache_sizes.set_val("L4", 16384).is_none());
 }
 
@@ -1158,17 +1213,21 @@ fn test_units() {
 
     let (space_dim, time_dim, count_dim) = (-3, -2, 1);
     let unit = Unit::new()
-        .space(Space::EByte, space_dim).unwrap()
-        .time(Time::Hour, time_dim).unwrap()
-        .count(Count::One, count_dim).unwrap();
+        .space(Space::EByte, space_dim)
+        .unwrap()
+        .time(Time::Hour, time_dim)
+        .unwrap()
+        .count(Count::One, count_dim)
+        .unwrap();
 
-    assert_eq!(unit.pmapi_repr,
-        ((space_dim as u32) & ((1 << 4) - 1)) << 28 |
-        ((time_dim as u32) & ((1 << 4) - 1)) << 24 |
-        ((count_dim as u32) & ((1 << 4) - 1)) << 20 |
-        (Space::EByte as u32) << 16 |
-        (Time::Hour as u32) << 12 |
-        (Count::One as u32) << 8
+    assert_eq!(
+        unit.pmapi_repr,
+        ((space_dim as u32) & ((1 << 4) - 1)) << 28
+            | ((time_dim as u32) & ((1 << 4) - 1)) << 24
+            | ((count_dim as u32) & ((1 << 4) - 1)) << 20
+            | (Space::EByte as u32) << 16
+            | (Time::Hour as u32) << 12
+            | (Count::One as u32) << 8
     );
 
     assert!(Unit::new().space(Space::Byte, 8).is_err());
@@ -1178,43 +1237,27 @@ fn test_units() {
 #[test]
 fn test_invalid_strings() {
     use rand::{thread_rng, Rng};
-    
+
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let invalid_string: String = thread_rng().gen_ascii_chars()
-        .take(STRING_BLOCK_LEN as usize).collect();
+    let invalid_string: String = thread_rng()
+        .gen_ascii_chars()
+        .take(STRING_BLOCK_LEN as usize)
+        .collect();
 
-    assert!(Metric::new(
-        &invalid_string, 0, sem, unit, "", ""
-    ).is_err());
-    assert!(Metric::new(
-        "", 0, sem, unit, &invalid_string, ""
-    ).is_err());
-    assert!(Metric::new(
-        "", 0, sem, unit, "", &invalid_string
-    ).is_err());
+    assert!(Metric::new(&invalid_string, 0, sem, unit, "", "").is_err());
+    assert!(Metric::new("", 0, sem, unit, &invalid_string, "").is_err());
+    assert!(Metric::new("", 0, sem, unit, "", &invalid_string).is_err());
 
-    assert!(Indom::new(
-        &[&invalid_string], "", ""
-    ).is_err());
-    assert!(Indom::new(
-        &[], &invalid_string, ""
-    ).is_err());
-    assert!(Indom::new(
-        &[], "", &invalid_string,
-    ).is_err());
+    assert!(Indom::new(&[&invalid_string], "", "").is_err());
+    assert!(Indom::new(&[], &invalid_string, "").is_err());
+    assert!(Indom::new(&[], "", &invalid_string,).is_err());
 
     let indom = Indom::new(&[], "", "").unwrap();
-    assert!(InstanceMetric::new(
-        &indom, &invalid_string, 0, sem, unit, "", ""
-    ).is_err());
-    assert!(InstanceMetric::new(
-        &indom, "", 0, sem, unit, &invalid_string, ""
-    ).is_err());
-    assert!(InstanceMetric::new(
-        &indom, "", 0, sem, unit, "", &invalid_string
-    ).is_err());
+    assert!(InstanceMetric::new(&indom, &invalid_string, 0, sem, unit, "", "").is_err());
+    assert!(InstanceMetric::new(&indom, "", 0, sem, unit, &invalid_string, "").is_err());
+    assert!(InstanceMetric::new(&indom, "", 0, sem, unit, "", &invalid_string).is_err());
 }
 
 #[test]
@@ -1224,10 +1267,14 @@ fn test_mmv2_string_check() {
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let mmv1_string: String = thread_rng().gen_ascii_chars()
-        .take((MMV1_NAME_MAX_LEN - 1) as usize).collect();
-    let mmv2_string: String = thread_rng().gen_ascii_chars()
-        .take((STRING_BLOCK_LEN - 1) as usize).collect();
+    let mmv1_string: String = thread_rng()
+        .gen_ascii_chars()
+        .take((MMV1_NAME_MAX_LEN - 1) as usize)
+        .collect();
+    let mmv2_string: String = thread_rng()
+        .gen_ascii_chars()
+        .take((STRING_BLOCK_LEN - 1) as usize)
+        .collect();
 
     let mmv1_metric = Metric::new(&mmv1_string, 0, sem, unit, "", "").unwrap();
     assert_eq!(mmv1_metric.has_mmv2_string(), false);
@@ -1252,14 +1299,16 @@ fn test_mmv2_string_check() {
 #[test]
 fn test_mmv2_string_blocks() {
     use super::super::mmv::*;
-    use rand::{thread_rng, Rng};
     use super::Client;
+    use rand::{thread_rng, Rng};
 
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let mmv2_string: String = thread_rng().gen_ascii_chars()
-        .take((STRING_BLOCK_LEN - 1) as usize).collect();
+    let mmv2_string: String = thread_rng()
+        .gen_ascii_chars()
+        .take((STRING_BLOCK_LEN - 1) as usize)
+        .collect();
 
     let mut metric = Metric::new(&mmv2_string, 0, sem, unit, "", "").unwrap();
     let indom = Indom::new(&[&mmv2_string], "", "").unwrap();
@@ -1269,11 +1318,12 @@ fn test_mmv2_string_blocks() {
     client.export(&mut [&mut metric, &mut im]).unwrap();
 
     let mmv = dump(client.mmv_path()).unwrap();
-    
+
     for m_blk in mmv.metric_blks().values() {
         match m_blk.name() {
-            &VersionSpecificString::String(ref s) =>
-                panic!("metric name \"{}\" should be in string section", s),
+            &VersionSpecificString::String(ref s) => {
+                panic!("metric name \"{}\" should be in string section", s)
+            }
             &VersionSpecificString::Offset(ref off) => {
                 let string = mmv.string_blks().get(off).unwrap().string();
                 assert_eq!(string, mmv2_string);
@@ -1283,8 +1333,9 @@ fn test_mmv2_string_blocks() {
 
     for i_blk in mmv.instance_blks().values() {
         match i_blk.external_id() {
-            &VersionSpecificString::String(ref s) =>
-                panic!("instance \"{}\" should be in string section", s),
+            &VersionSpecificString::String(ref s) => {
+                panic!("instance \"{}\" should be in string section", s)
+            }
             &VersionSpecificString::Offset(ref off) => {
                 let string = mmv.string_blks().get(off).unwrap().string();
                 assert_eq!(string, mmv2_string);
@@ -1295,25 +1346,31 @@ fn test_mmv2_string_blocks() {
 
 #[test]
 fn test_random_numeric_metrics() {
+    use super::Client;
     use byteorder::ReadBytesExt;
     use rand::{thread_rng, Rng};
-    use super::Client;
 
     let mut metrics = Vec::new();
     let mut new_vals = Vec::new();
     let n_metrics = thread_rng().gen::<u8>() % 20;
 
     let client = Client::new("numeric_metrics").unwrap();
-    
+
     for _ in 1..n_metrics {
-        let rnd_name: String = thread_rng().gen_ascii_chars()
-            .take(MMV1_NAME_MAX_LEN as usize - 1).collect();
+        let rnd_name: String = thread_rng()
+            .gen_ascii_chars()
+            .take(MMV1_NAME_MAX_LEN as usize - 1)
+            .collect();
 
-        let rnd_shorthelp: String = thread_rng().gen_ascii_chars()
-            .take(STRING_BLOCK_LEN as usize - 1).collect();
+        let rnd_shorthelp: String = thread_rng()
+            .gen_ascii_chars()
+            .take(STRING_BLOCK_LEN as usize - 1)
+            .collect();
 
-        let rnd_longhelp: String = thread_rng().gen_ascii_chars()
-            .take(STRING_BLOCK_LEN as usize - 1).collect();
+        let rnd_longhelp: String = thread_rng()
+            .gen_ascii_chars()
+            .take(STRING_BLOCK_LEN as usize - 1)
+            .collect();
 
         let rnd_val1 = thread_rng().gen::<u32>();
 
@@ -1324,7 +1381,8 @@ fn test_random_numeric_metrics() {
             Unit::new(),
             &rnd_shorthelp,
             &rnd_longhelp,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(*metric.val(), rnd_val1);
 
@@ -1336,12 +1394,12 @@ fn test_random_numeric_metrics() {
         new_vals.push(thread_rng().gen::<u32>());
     }
 
-    { // mmv_writers needs to go out of scope before we can mutate
-      // the metrics after exporting. The type annotation is needed
-      // because type inference fails.
-        let mut mmv_writers: Vec<&mut MMVWriter> = metrics.iter_mut()
-            .map(|m| m as &mut MMVWriter)
-            .collect();
+    {
+        // mmv_writers needs to go out of scope before we can mutate
+        // the metrics after exporting. The type annotation is needed
+        // because type inference fails.
+        let mut mmv_writers: Vec<&mut MMVWriter> =
+            metrics.iter_mut().map(|m| m as &mut MMVWriter).collect();
         client.export(&mut mmv_writers).unwrap();
     }
 
@@ -1357,11 +1415,11 @@ fn test_random_numeric_metrics() {
 
 #[test]
 fn test_simple_metrics() {
+    use super::Client;
     use byteorder::ReadBytesExt;
     use rand::{thread_rng, Rng};
     use std::ffi::CStr;
     use std::mem::transmute;
-    use super::Client;
 
     // f64 metric
     let hz = Unit::new().time(Time::Sec, -1).unwrap();
@@ -1370,8 +1428,10 @@ fn test_simple_metrics() {
         thread_rng().gen::<f64>(),
         Semantics::Instant,
         hz,
-        "", "",
-    ).unwrap();
+        "",
+        "",
+    )
+    .unwrap();
 
     // string metric
     let mut color = Metric::new(
@@ -1379,8 +1439,10 @@ fn test_simple_metrics() {
         String::from("cyan"),
         Semantics::Discrete,
         Unit::new(),
-        "Color", "",
-    ).unwrap();
+        "Color",
+        "",
+    )
+    .unwrap();
 
     // u32 metric
     let mut photons = Metric::new(
@@ -1390,10 +1452,13 @@ fn test_simple_metrics() {
         Unit::new().count(Count::One, 1).unwrap(),
         "No. of photons",
         "Number of photons emitted by source",
-    ).unwrap();
+    )
+    .unwrap();
 
-    Client::new("physical_metrics").unwrap()
-        .export(&mut [&mut freq, &mut color, &mut photons]).unwrap();
+    Client::new("physical_metrics")
+        .unwrap()
+        .export(&mut [&mut freq, &mut color, &mut photons])
+        .unwrap();
 
     let new_freq = thread_rng().gen::<f64>();
     assert!(freq.set_val(new_freq).is_ok());
@@ -1405,17 +1470,12 @@ fn test_simple_metrics() {
     assert!(photons.set_val(new_photon_count).is_ok());
 
     let mut freq_slice = unsafe { freq.mmap_view.as_slice() };
-    assert_eq!(
-        new_freq,
-        unsafe { 
-            transmute::<u64, f64>(freq_slice.read_u64::<super::Endian>().unwrap())
-        }
-    );
+    assert_eq!(new_freq, unsafe {
+        transmute::<u64, f64>(freq_slice.read_u64::<super::Endian>().unwrap())
+    });
 
     let color_slice = unsafe { color.mmap_view.as_slice() };
-    let cstr = unsafe {
-        CStr::from_ptr(color_slice.as_ptr() as *const i8)
-    };
+    let cstr = unsafe { CStr::from_ptr(color_slice.as_ptr() as *const i8) };
     assert_eq!(new_color, cstr.to_str().unwrap());
 
     let mut photon_slice = unsafe { photons.mmap_view.as_slice() };

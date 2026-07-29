@@ -8,17 +8,21 @@ use super::*;
 pub struct GaugeVector {
     im: InstanceMetric<f64>,
     indom: Indom,
-    init_val: f64
+    init_val: f64,
 }
 
 impl GaugeVector {
     /// Creates a new gauge vector with given initial value and instances
-    pub fn new(name: &str, init_val: f64, instances: &[&str],
-        shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
-        
+    pub fn new(
+        name: &str,
+        init_val: f64,
+        instances: &[&str],
+        shorthelp_text: &str,
+        longhelp_text: &str,
+    ) -> Result<Self, String> {
         let indom_helptext = format!("Instance domain for GaugeVector '{}'", name);
         let indom = Indom::new(instances, &indom_helptext, &indom_helptext)?;
-        
+
         let im = InstanceMetric::new(
             &indom,
             name,
@@ -26,13 +30,13 @@ impl GaugeVector {
             Semantics::Counter,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
-            longhelp_text
+            longhelp_text,
         )?;
 
         Ok(GaugeVector {
             im: im,
             indom: indom,
-            init_val: init_val
+            init_val: init_val,
         })
     }
 
@@ -50,9 +54,10 @@ impl GaugeVector {
     ///
     /// The wrapping `Option` is `None` if the instance wasn't found
     pub fn inc(&mut self, instance: &str, increment: f64) -> Option<io::Result<()>> {
-        self.im.val(instance).cloned().and_then(|val|
-            self.im.set_val(instance, val + increment)
-        )
+        self.im
+            .val(instance)
+            .cloned()
+            .and_then(|val| self.im.set_val(instance, val + increment))
     }
 
     /// Decrements the gauge of the instance by the given value
@@ -94,13 +99,20 @@ impl GaugeVector {
     }
 
     /// Internally created instance domain
-    pub fn indom(&self) -> &Indom { &self.indom }
+    pub fn indom(&self) -> &Indom {
+        &self.indom
+    }
 }
 
 impl MMVWriter for GaugeVector {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         self.im.write(ws, c, mmv_ver)
     }
 
@@ -117,19 +129,17 @@ impl MMVWriter for GaugeVector {
 pub fn test() {
     use super::super::Client;
 
-    let mut gv = GaugeVector::new(
-        "gauge_vector",
-        1.5,
-        &["a", "b", "c"],
-        "", "").unwrap();
+    let mut gv = GaugeVector::new("gauge_vector", 1.5, &["a", "b", "c"], "", "").unwrap();
 
-    assert_eq!(gv.val("a").unwrap(), 1.5);   
+    assert_eq!(gv.val("a").unwrap(), 1.5);
     assert_eq!(gv.val("b").unwrap(), 1.5);
     assert_eq!(gv.val("c").unwrap(), 1.5);
 
-    Client::new("count_vector_test").unwrap()
-        .export(&mut [&mut gv]).unwrap();
-    
+    Client::new("count_vector_test")
+        .unwrap()
+        .export(&mut [&mut gv])
+        .unwrap();
+
     gv.set("a", 2.5).unwrap().unwrap();
     assert_eq!(gv.val("a").unwrap(), 2.5);
 
@@ -140,12 +150,12 @@ pub fn test() {
     assert_eq!(gv.val("c").unwrap(), 0.0);
 
     gv.inc_all(2.0).unwrap();
-    assert_eq!(gv.val("a").unwrap(), 4.5);   
+    assert_eq!(gv.val("a").unwrap(), 4.5);
     assert_eq!(gv.val("b").unwrap(), 5.0);
     assert_eq!(gv.val("c").unwrap(), 2.0);
 
     gv.dec_all(0.5).unwrap();
-    assert_eq!(gv.val("a").unwrap(), 4.0);   
+    assert_eq!(gv.val("a").unwrap(), 4.0);
     assert_eq!(gv.val("b").unwrap(), 4.5);
     assert_eq!(gv.val("c").unwrap(), 1.5);
 
@@ -153,7 +163,7 @@ pub fn test() {
     assert_eq!(gv.val("b").unwrap(), 1.5);
 
     gv.reset_all().unwrap();
-    assert_eq!(gv.val("a").unwrap(), 1.5);   
+    assert_eq!(gv.val("a").unwrap(), 1.5);
     assert_eq!(gv.val("b").unwrap(), 1.5);
     assert_eq!(gv.val("c").unwrap(), 1.5);
 }

@@ -7,24 +7,29 @@ use super::*;
 /// `Count::One` scale, and `1` count dimension
 pub struct Counter {
     metric: Metric<u64>,
-    init_val: u64
+    init_val: u64,
 }
 
 impl Counter {
     /// Creates a new counter metric with given initial value
-    pub fn new(name: &str, init_val: u64, shorthelp_text: &str, longhelp_text: &str) -> Result<Self, String> {
+    pub fn new(
+        name: &str,
+        init_val: u64,
+        shorthelp_text: &str,
+        longhelp_text: &str,
+    ) -> Result<Self, String> {
         let metric = Metric::new(
             name,
             init_val,
             Semantics::Counter,
             Unit::new().count(Count::One, 1)?,
             shorthelp_text,
-            longhelp_text
+            longhelp_text,
         )?;
 
         Ok(Counter {
             metric: metric,
-            init_val: init_val
+            init_val: init_val,
         })
     }
 
@@ -52,9 +57,14 @@ impl Counter {
 }
 
 impl MMVWriter for Counter {
-    private_impl!{}
+    private_impl! {}
 
-    fn write(&mut self, ws: &mut MMVWriterState, c: &mut Cursor<&mut [u8]>, mmv_ver: Version) -> io::Result<()> {
+    fn write(
+        &mut self,
+        ws: &mut MMVWriterState,
+        c: &mut Cursor<&mut [u8]>,
+        mmv_ver: Version,
+    ) -> io::Result<()> {
         self.metric.write(ws, c, mmv_ver)
     }
 
@@ -74,9 +84,11 @@ pub fn test() {
     let mut counter = Counter::new("counter", 1, "", "").unwrap();
     assert_eq!(counter.val(), 1);
 
-    Client::new("counter_test").unwrap()
-        .export(&mut [&mut counter]).unwrap();
-    
+    Client::new("counter_test")
+        .unwrap()
+        .export(&mut [&mut counter])
+        .unwrap();
+
     counter.up().unwrap();
     assert_eq!(counter.val(), 2);
 

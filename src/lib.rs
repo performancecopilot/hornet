@@ -3,11 +3,16 @@ extern crate hdrsample;
 extern crate memmap;
 extern crate regex;
 extern crate time;
-#[macro_use] extern crate bitflags;
-#[macro_use] extern crate lazy_static;
-#[cfg(test)] extern crate rand;
-#[cfg(unix)] extern crate nix;
-#[cfg(windows)] extern crate kernel32;
+#[macro_use]
+extern crate bitflags;
+#[macro_use]
+extern crate lazy_static;
+#[cfg(windows)]
+extern crate kernel32;
+#[cfg(unix)]
+extern crate nix;
+#[cfg(test)]
+extern crate rand;
 
 const CLUSTER_ID_BIT_LEN: usize = 12;
 const ITEM_BIT_LEN: usize = 10;
