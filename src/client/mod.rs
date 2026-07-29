@@ -1,5 +1,5 @@
 use crate::byteio::WriteBytesExt;
-use memmap::{Mmap, Protection};
+use memmap2::MmapMut;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -20,7 +20,7 @@ use super::{
 };
 
 pub mod metric;
-use self::metric::{MMVWriter, MMVWriterState};
+use self::metric::{MMVWriter, MMVWriterState, MmapView};
 
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
@@ -292,13 +292,17 @@ impl Client {
 
         file.write_all(&vec![0; mmv_size])?;
 
-        ws.mmap_view = Some(Mmap::open(&file, Protection::ReadWrite)?.into_view_sync());
-
-        let mut mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
-        let mut c = Cursor::new(unsafe { mmap_view.as_mut_slice() });
+        // Safety: the file was just created and zero-filled above, and no
+        // other writer has it open.
+        let mmap_view = MmapView::whole(unsafe { MmapMut::map_mut(&file)? });
+        ws.mmap_view = Some(mmap_view.clone());
 
         ws.flags = self.flags.bits();
         ws.cluster_id = self.cluster_id;
+
+        let mut guard = mmap_view.lock_whole();
+        let mut c = Cursor::new(&mut guard[..]);
+
         write_mmv_header(&mut ws, &mut c, mmv_ver)?;
 
         write_toc_block(1, ws.n_indoms as u32, ws.indom_sec_off, &mut c)?;

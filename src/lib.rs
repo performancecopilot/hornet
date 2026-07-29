@@ -1,5 +1,5 @@
 extern crate hdrsample;
-extern crate memmap;
+extern crate memmap2;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]

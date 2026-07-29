@@ -1,5 +1,4 @@
 use crate::byteio::WriteBytesExt;
-use memmap::{Mmap, MmapViewSync, Protection};
 use std::collections::hash_map::{DefaultHasher, HashMap};
 use std::collections::hash_set::Iter;
 use std::collections::HashSet;
@@ -55,12 +54,74 @@ mod private {
         fn write<W: WriteBytesExt>(&self, writer: &mut W) -> io::Result<()>;
     }
 
-    use memmap::MmapViewSync;
+    use memmap2::MmapMut;
     use std::collections::HashMap;
+    use std::sync::{Arc, Mutex, MutexGuard};
+
+    /// A cloneable handle to a byte range within a shared memory map, letting
+    /// each metric value update its own bytes.
+    ///
+    /// Sub-views from `slice` must be kept disjoint: the mutex keeps writes
+    /// memory-safe, but overlapping ranges clobber each other's values.
+    #[derive(Clone)]
+    pub struct MmapView {
+        mmap: Arc<Mutex<MmapMut>>,
+        offset: usize,
+        len: usize,
+    }
+
+    impl MmapView {
+        /// Placeholder mapping for metrics that haven't been exported yet.
+        pub fn anonymous(len: usize) -> io::Result<Self> {
+            Ok(MmapView::whole(MmapMut::map_anon(len)?))
+        }
+
+        pub fn whole(mmap: MmapMut) -> Self {
+            let len = mmap.len();
+            MmapView {
+                mmap: Arc::new(Mutex::new(mmap)),
+                offset: 0,
+                len,
+            }
+        }
+
+        /// `offset` is relative to this view, not to the underlying map.
+        pub fn slice(&self, offset: usize, len: usize) -> io::Result<Self> {
+            if offset.checked_add(len).map_or(true, |end| end > self.len) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "MmapView::slice out of bounds",
+                ));
+            }
+            Ok(MmapView {
+                mmap: self.mmap.clone(),
+                offset: self.offset + offset,
+                len,
+            })
+        }
+
+        /// Locks the whole underlying map, not just this view's range. Held
+        /// for the length of an export, so nothing called under it may take
+        /// the same lock.
+        pub fn lock_whole(&self) -> MutexGuard<'_, MmapMut> {
+            self.mmap.lock().unwrap()
+        }
+
+        pub fn write_value<T: MetricType>(&mut self, value: &T) -> io::Result<()> {
+            let mut guard = self.mmap.lock().unwrap();
+            let mut slice = &mut guard[self.offset..self.offset + self.len];
+            value.write(&mut slice)
+        }
+
+        pub fn to_vec(&self) -> Vec<u8> {
+            let guard = self.mmap.lock().unwrap();
+            guard[self.offset..self.offset + self.len].to_vec()
+        }
+    }
 
     pub struct MMVWriterState {
         // Mmap view of the entier MMV file
-        pub mmap_view: Option<MmapViewSync>,
+        pub mmap_view: Option<MmapView>,
 
         // generation numbers
         pub gen: i64,
@@ -158,7 +219,7 @@ mod private {
 }
 
 pub(super) use self::private::MetricType;
-pub(super) use self::private::{MMVWriter, MMVWriterState};
+pub(super) use self::private::{MMVWriter, MMVWriterState, MmapView};
 
 macro_rules! impl_metric_type_for (
     ($typ:tt, $base_typ:tt, $type_code:expr) => (
@@ -520,15 +581,11 @@ pub struct Metric<T> {
     shorthelp: String,
     longhelp: String,
     val: T,
-    mmap_view: MmapViewSync,
+    mmap_view: MmapView,
 }
 
 lazy_static! {
-    static ref SCRATCH_VIEW: MmapViewSync = {
-        Mmap::anonymous(STRING_BLOCK_LEN as usize, Protection::ReadWrite)
-            .unwrap()
-            .into_view_sync()
-    };
+    static ref SCRATCH_VIEW: MmapView = MmapView::anonymous(STRING_BLOCK_LEN as usize).unwrap();
 }
 
 impl<T: MetricType + Clone> Metric<T> {
@@ -573,7 +630,7 @@ impl<T: MetricType + Clone> Metric<T> {
             shorthelp: shorthelp.to_owned(),
             longhelp: longhelp.to_owned(),
             val: init_val,
-            mmap_view: unsafe { SCRATCH_VIEW.clone() },
+            mmap_view: SCRATCH_VIEW.clone(),
         })
     }
 
@@ -590,7 +647,7 @@ impl<T: MetricType + Clone> Metric<T> {
     /// If the metric isn't exported, this method will still
     /// succeed and update the value.
     pub fn set_val(&mut self, new_val: T) -> io::Result<()> {
-        new_val.write(unsafe { &mut self.mmap_view.as_mut_slice() })?;
+        self.mmap_view.write_value(&new_val)?;
         self.val = new_val;
         Ok(())
     }
@@ -706,7 +763,7 @@ impl Indom {
 
 struct Instance<T> {
     val: T,
-    mmap_view: MmapViewSync,
+    mmap_view: MmapView,
 }
 
 /// An instance metric is a set of related metrics with same
@@ -736,7 +793,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
         for instance_str in &indom.instances {
             let instance = Instance {
                 val: init_val.clone(),
-                mmap_view: unsafe { SCRATCH_VIEW.clone() },
+                mmap_view: SCRATCH_VIEW.clone(),
             };
             vals.insert(instance_str.to_owned(), instance);
         }
@@ -770,7 +827,7 @@ impl<T: MetricType + Clone> InstanceMetric<T> {
     /// found, returns `None`.
     pub fn set_val(&mut self, instance: &str, new_val: T) -> Option<io::Result<()>> {
         self.vals.get_mut(instance).map(|i| {
-            new_val.write(unsafe { &mut i.mmap_view.as_mut_slice() })?;
+            i.mmap_view.write_value(&new_val)?;
             i.val = new_val;
             Ok(())
         })
@@ -847,9 +904,11 @@ impl<T: MetricType> Metric<T> {
             let (value_offset, value_size) =
                 write_value_block(ws, c, &self.val, metric_blk_off, 0)?;
 
-            let mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
-            let (_, value_mmap_view, _) = three_way_split(mmap_view, value_offset, value_size)?;
-            self.mmap_view = value_mmap_view;
+            self.mmap_view = ws
+                .mmap_view
+                .as_ref()
+                .unwrap()
+                .slice(value_offset, value_size)?;
         }
 
         ws.metric_blk_idx += 1;
@@ -915,9 +974,11 @@ impl<T: MetricType> MMVWriter for InstanceMetric<T> {
                 write_value_block(ws, c, &instance.val, metric_blk_off, instance_blk_off)?;
 
             // set mmap_view for instance
-            let mmap_view = unsafe { ws.mmap_view.as_mut().unwrap().clone() };
-            let (_, value_mmap_view, _) = three_way_split(mmap_view, value_offset, value_size)?;
-            instance.mmap_view = value_mmap_view;
+            instance.mmap_view = ws
+                .mmap_view
+                .as_ref()
+                .unwrap()
+                .slice(value_offset, value_size)?;
         }
 
         Ok(())
@@ -1028,16 +1089,6 @@ fn write_indom_and_instances<'a>(
     let cloned_offs = instance_blk_offs.clone();
     ws.indom_cache.insert(indom.id, Some(instance_blk_offs));
     Ok(cloned_offs)
-}
-
-fn three_way_split(
-    view: MmapViewSync,
-    mid_idx: usize,
-    mid_len: usize,
-) -> io::Result<(MmapViewSync, MmapViewSync, MmapViewSync)> {
-    let (left_view, mid_right_view) = view.split_at(mid_idx).unwrap();
-    let (mid_view, right_view) = mid_right_view.split_at(mid_len).unwrap();
-    Ok((left_view, mid_view, right_view))
 }
 
 // writes `value` at end of value section, updates value count in value TOC,
@@ -1408,7 +1459,8 @@ fn test_random_numeric_metrics() {
     }
 
     for (m, v) in metrics.iter_mut().zip(new_vals) {
-        let mut slice = unsafe { m.mmap_view.as_slice() };
+        let bytes = m.mmap_view.to_vec();
+        let mut slice = &bytes[..];
         assert_eq!(v, slice.read_u64().unwrap() as u32);
     }
 }
@@ -1469,16 +1521,18 @@ fn test_simple_metrics() {
     let new_photon_count = thread_rng().gen::<u32>();
     assert!(photons.set_val(new_photon_count).is_ok());
 
-    let mut freq_slice = unsafe { freq.mmap_view.as_slice() };
+    let freq_bytes = freq.mmap_view.to_vec();
+    let mut freq_slice = &freq_bytes[..];
     assert_eq!(new_freq, unsafe {
         transmute::<u64, f64>(freq_slice.read_u64().unwrap())
     });
 
-    let color_slice = unsafe { color.mmap_view.as_slice() };
-    let cstr = unsafe { CStr::from_ptr(color_slice.as_ptr() as *const i8) };
+    let color_bytes = color.mmap_view.to_vec();
+    let cstr = unsafe { CStr::from_ptr(color_bytes.as_ptr() as *const i8) };
     assert_eq!(new_color, cstr.to_str().unwrap());
 
-    let mut photon_slice = unsafe { photons.mmap_view.as_slice() };
+    let photon_bytes = photons.mmap_view.to_vec();
+    let mut photon_slice = &photon_bytes[..];
     assert_eq!(new_photon_count, photon_slice.read_u64().unwrap() as u32);
 
     // TODO: after implementing mmvdump functionality, test the
