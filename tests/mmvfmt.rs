@@ -17,12 +17,14 @@ fn test_mmvfmt() {
     let output_prefix = "mmvdump_op";
     let output_suffix = ".golden";
 
-    for i in 1..tests+1 {
+    for i in 1..tests + 1 {
         let mut output_path = testdata_dir.clone();
         output_path.push(&format!("{}{}{}", output_prefix, i, output_suffix));
         let mut golden_output = Vec::new();
-        File::open(output_path).unwrap()
-            .read_to_end(&mut golden_output).unwrap();
+        File::open(output_path)
+            .unwrap()
+            .read_to_end(&mut golden_output)
+            .unwrap();
 
         let mut input_path = testdata_dir.clone();
         input_path.push(&format!("{}{}{}", input_prefix, i, input_suffix));

@@ -1,13 +1,13 @@
-extern crate iron;
 extern crate hornet;
+extern crate iron;
 
-use std::sync::Mutex;
-use hornet::client::Client;
 use hornet::client::metric::*;
-use iron::prelude::*;
-use iron::middleware::BeforeMiddleware;
+use hornet::client::Client;
 use iron::method::Method;
+use iron::middleware::BeforeMiddleware;
+use iron::prelude::*;
 use iron::status;
+use std::sync::Mutex;
 
 /*
     this examples demonstrates usage of CountVector metric
@@ -21,7 +21,7 @@ fn method_str(method: &Method) -> String {
 }
 
 struct MethodCounter {
-    pub metric: Mutex<CountVector>
+    pub metric: Mutex<CountVector>,
 }
 
 impl MethodCounter {
@@ -37,12 +37,15 @@ impl MethodCounter {
                 &method_str(&Method::Delete),
                 &method_str(&Method::Head),
                 &method_str(&Method::Trace),
-                &method_str(&Method::Connect)
+                &method_str(&Method::Connect),
             ],
-            "Counts of recieved HTTP request methods", "").unwrap();
-        
+            "Counts of recieved HTTP request methods",
+            "",
+        )
+        .unwrap();
+
         MethodCounter {
-            metric: Mutex::new(metric)
+            metric: Mutex::new(metric),
         }
     }
 }
@@ -50,7 +53,7 @@ impl MethodCounter {
 impl BeforeMiddleware for MethodCounter {
     fn before(&self, req: &mut Request) -> IronResult<()> {
         match &req.method {
-            &Method::Extension(_) => {},
+            &Method::Extension(_) => {}
             _ => {
                 let mut counter = self.metric.lock().unwrap();
                 counter.up(&method_str(&req.method)).unwrap().unwrap();
@@ -73,9 +76,7 @@ fn main() {
         client.export(&mut [&mut *metric]).unwrap();
     }
 
-    let mut chain = Chain::new(|_: &mut Request| {
-        Ok(Response::with((status::Ok, "Hello World!")))
-    });
+    let mut chain = Chain::new(|_: &mut Request| Ok(Response::with((status::Ok, "Hello World!"))));
     chain.link_before(method_counter);
 
     println!("Listening on http://{}", URL);

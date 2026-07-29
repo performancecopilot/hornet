@@ -4,8 +4,8 @@ use std::ffi::CStr; // Used to read null-terminated strings in MMV files
 use std::fmt;
 use std::fs::File;
 use std::io;
-use std::io::Cursor;
 use std::io::prelude::*;
+use std::io::Cursor;
 use std::path::Path;
 use std::str;
 
@@ -36,7 +36,7 @@ pub enum MTCode {
     /// 64-bit double
     F64,
     /// String
-    String
+    String,
 }
 
 impl MTCode {
@@ -49,7 +49,7 @@ impl MTCode {
             4 => Some(MTCode::F32),
             5 => Some(MTCode::F64),
             6 => Some(MTCode::String),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -63,19 +63,14 @@ impl fmt::Display for MTCode {
             MTCode::U64 => write!(f, "Uint64")?,
             MTCode::F32 => write!(f, "Float32")?,
             MTCode::F64 => write!(f, "Double64")?,
-            MTCode::String => write!(f, "String")?
+            MTCode::String => write!(f, "String")?,
         }
         write!(f, " (0x{:x})", *self as u32)
     }
 }
 
 use super::{
-    Endian,
-    MMV1_NAME_MAX_LEN,
-    STRING_BLOCK_LEN,
-    CLUSTER_ID_BIT_LEN,
-    ITEM_BIT_LEN,
-    INDOM_BIT_LEN
+    Endian, CLUSTER_ID_BIT_LEN, INDOM_BIT_LEN, ITEM_BIT_LEN, MMV1_NAME_MAX_LEN, STRING_BLOCK_LEN,
 };
 
 fn is_valid_indom(indom: u32) -> bool {
@@ -102,7 +97,7 @@ pub enum MMVDumpError {
     /// IO error while reading MMV
     Io(io::Error),
     /// UTF-8 error while parsing MMV strings
-    Utf8(str::Utf8Error)
+    Utf8(str::Utf8Error),
 }
 
 impl From<io::Error> for MMVDumpError {
@@ -140,21 +135,43 @@ pub struct MMV {
     value_blks: BTreeMap<u64, ValueBlk>,
     string_blks: BTreeMap<u64, StringBlk>,
     indom_blks: BTreeMap<u64, IndomBlk>,
-    instance_blks: BTreeMap<u64, InstanceBlk>
+    instance_blks: BTreeMap<u64, InstanceBlk>,
 }
 
 impl MMV {
-    pub fn header(&self) -> &Header { &self.header }
-    pub fn metric_toc(&self) -> &TocBlk { &self.metric_toc }
-    pub fn value_toc(&self) -> &TocBlk { &self.value_toc }
-    pub fn string_toc(&self) -> &Option<TocBlk> { &self.string_toc }
-    pub fn indom_toc(&self) -> &Option<TocBlk> { &self.indom_toc }
-    pub fn instance_toc(&self) -> &Option<TocBlk> { &self.instance_toc }
-    pub fn metric_blks(&self) -> &BTreeMap<u64, MetricBlk> { &self.metric_blks }
-    pub fn value_blks(&self) -> &BTreeMap<u64, ValueBlk> { &self.value_blks }
-    pub fn string_blks(&self) -> &BTreeMap<u64, StringBlk> { &self.string_blks }
-    pub fn indom_blks(&self) -> &BTreeMap<u64, IndomBlk> { &self.indom_blks }
-    pub fn instance_blks(&self) -> &BTreeMap<u64, InstanceBlk> { &self.instance_blks }
+    pub fn header(&self) -> &Header {
+        &self.header
+    }
+    pub fn metric_toc(&self) -> &TocBlk {
+        &self.metric_toc
+    }
+    pub fn value_toc(&self) -> &TocBlk {
+        &self.value_toc
+    }
+    pub fn string_toc(&self) -> &Option<TocBlk> {
+        &self.string_toc
+    }
+    pub fn indom_toc(&self) -> &Option<TocBlk> {
+        &self.indom_toc
+    }
+    pub fn instance_toc(&self) -> &Option<TocBlk> {
+        &self.instance_toc
+    }
+    pub fn metric_blks(&self) -> &BTreeMap<u64, MetricBlk> {
+        &self.metric_blks
+    }
+    pub fn value_blks(&self) -> &BTreeMap<u64, ValueBlk> {
+        &self.value_blks
+    }
+    pub fn string_blks(&self) -> &BTreeMap<u64, StringBlk> {
+        &self.string_blks
+    }
+    pub fn indom_blks(&self) -> &BTreeMap<u64, IndomBlk> {
+        &self.indom_blks
+    }
+    pub fn instance_blks(&self) -> &BTreeMap<u64, InstanceBlk> {
+        &self.instance_blks
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -163,7 +180,7 @@ pub enum Version {
     /// Version 1
     V1 = 1,
     /// Version 2
-    V2 = 2
+    V2 = 2,
 }
 
 impl Version {
@@ -171,7 +188,7 @@ impl Version {
         match x {
             1 => Some(Version::V1),
             2 => Some(Version::V2),
-            _ => None
+            _ => None,
         }
     }
 }
@@ -192,14 +209,30 @@ pub struct Header {
 }
 
 impl Header {
-    pub fn magic(&self) -> &[u8; 4] { &self.magic }
-    pub fn version(&self) -> Version { self.version }
-    pub fn gen1(&self) -> i64 { self.gen1 }
-    pub fn gen2(&self) -> i64 { self.gen2 }
-    pub fn toc_count(&self) -> u32 { self.toc_count }
-    pub fn flags(&self) -> u32 { self.flags }
-    pub fn pid(&self) -> i32 { self.pid }
-    pub fn cluster_id(&self) -> u32 { self.cluster_id }
+    pub fn magic(&self) -> &[u8; 4] {
+        &self.magic
+    }
+    pub fn version(&self) -> Version {
+        self.version
+    }
+    pub fn gen1(&self) -> i64 {
+        self.gen1
+    }
+    pub fn gen2(&self) -> i64 {
+        self.gen2
+    }
+    pub fn toc_count(&self) -> u32 {
+        self.toc_count
+    }
+    pub fn flags(&self) -> u32 {
+        self.flags
+    }
+    pub fn pid(&self) -> i32 {
+        self.pid
+    }
+    pub fn cluster_id(&self) -> u32 {
+        self.cluster_id
+    }
 }
 
 impl Header {
@@ -225,7 +258,7 @@ impl Header {
         let gen2 = r.read_i64::<Endian>()?;
         if gen1 != gen2 {
             return_mmvdumperror!("Generation timestamps don't match", 0);
-        } 
+        }
 
         let toc_count = r.read_u32::<Endian>()?;
         if toc_count > 5 || toc_count < 2 {
@@ -248,7 +281,7 @@ impl Header {
             toc_count: toc_count,
             flags: flags,
             pid: pid,
-            cluster_id: cluster_id
+            cluster_id: cluster_id,
         })
     }
 }
@@ -262,15 +295,25 @@ pub struct TocBlk {
     _mmv_offset: u64,
     sec: u32,
     entries: u32,
-    sec_offset: u64
+    sec_offset: u64,
 }
 
 impl TocBlk {
-    pub fn _toc_index(&self) -> u32 { self._toc_index }
-    pub fn _mmv_offset(&self) -> u64 { self._mmv_offset }
-    pub fn sec(&self) -> u32 { self.sec }
-    pub fn entries(&self) -> u32 { self.entries }
-    pub fn sec_offset(&self) -> u64 { self.sec_offset }
+    pub fn _toc_index(&self) -> u32 {
+        self._toc_index
+    }
+    pub fn _mmv_offset(&self) -> u64 {
+        self._mmv_offset
+    }
+    pub fn sec(&self) -> u32 {
+        self.sec
+    }
+    pub fn entries(&self) -> u32 {
+        self.entries
+    }
+    pub fn sec_offset(&self) -> u64 {
+        self.sec_offset
+    }
 }
 
 impl TocBlk {
@@ -292,7 +335,7 @@ impl TocBlk {
             _mmv_offset: 0,
             sec: sec,
             entries: entries,
-            sec_offset: sec_offset
+            sec_offset: sec_offset,
         })
     }
 }
@@ -302,7 +345,7 @@ pub enum VersionSpecificString {
     /// MMV version 1 direct string
     String(String),
     /// MMV version 2 offset to string block
-    Offset(u64)
+    Offset(u64),
 }
 
 /// Metric block structure
@@ -318,19 +361,37 @@ pub struct MetricBlk {
     indom: Option<u32>,
     pad: u32,
     short_help_offset: Option<u64>,
-    long_help_offset: Option<u64>
+    long_help_offset: Option<u64>,
 }
 
 impl MetricBlk {
-    pub fn name(&self) -> &VersionSpecificString { &self.name }
-    pub fn item(&self) -> &Option<u32> { &self.item }
-    pub fn typ(&self) -> u32 { self.typ }
-    pub fn sem(&self) -> u32 { self.sem }
-    pub fn unit(&self) -> u32 { self.unit }
-    pub fn indom(&self) -> &Option<u32> { &self.indom }
-    pub fn pad(&self) -> u32 { self.pad }
-    pub fn short_help_offset(&self) -> &Option<u64> { &self.short_help_offset }
-    pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
+    pub fn name(&self) -> &VersionSpecificString {
+        &self.name
+    }
+    pub fn item(&self) -> &Option<u32> {
+        &self.item
+    }
+    pub fn typ(&self) -> u32 {
+        self.typ
+    }
+    pub fn sem(&self) -> u32 {
+        self.sem
+    }
+    pub fn unit(&self) -> u32 {
+        self.unit
+    }
+    pub fn indom(&self) -> &Option<u32> {
+        &self.indom
+    }
+    pub fn pad(&self) -> u32 {
+        self.pad
+    }
+    pub fn short_help_offset(&self) -> &Option<u64> {
+        &self.short_help_offset
+    }
+    pub fn long_help_offset(&self) -> &Option<u64> {
+        &self.long_help_offset
+    }
 }
 
 impl MetricBlk {
@@ -339,14 +400,10 @@ impl MetricBlk {
             Version::V1 => {
                 let mut name_bytes = [0; MMV1_NAME_MAX_LEN as usize];
                 r.read_exact(&mut name_bytes)?;
-                let cstr = unsafe {
-                    CStr::from_ptr(name_bytes.as_ptr() as *const i8)
-                };
+                let cstr = unsafe { CStr::from_ptr(name_bytes.as_ptr() as *const i8) };
                 VersionSpecificString::String(cstr.to_str()?.to_owned())
-            },
-            Version::V2 => {
-                VersionSpecificString::Offset(r.read_u64::<Endian>()?)
             }
+            Version::V2 => VersionSpecificString::Offset(r.read_u64::<Endian>()?),
         };
 
         let item = r.read_u32::<Endian>()?;
@@ -362,29 +419,41 @@ impl MetricBlk {
 
         let short_help_offset = r.read_u64::<Endian>()?;
         let long_help_offset = r.read_u64::<Endian>()?;
-        
+
         Ok(MetricBlk {
             name: name,
             item: {
-                if is_valid_item(item) { Some(item) }
-                else { None }
+                if is_valid_item(item) {
+                    Some(item)
+                } else {
+                    None
+                }
             },
             typ: typ,
             sem: sem,
             unit: unit,
             indom: {
-                if is_valid_indom(indom) { Some(indom) }
-                else { None }
+                if is_valid_indom(indom) {
+                    Some(indom)
+                } else {
+                    None
+                }
             },
             pad: pad,
             short_help_offset: {
-                if is_valid_blk_offset(short_help_offset) { Some(short_help_offset) }
-                else { None }
+                if is_valid_blk_offset(short_help_offset) {
+                    Some(short_help_offset)
+                } else {
+                    None
+                }
             },
             long_help_offset: {
-                if is_valid_blk_offset(long_help_offset) { Some(long_help_offset) }
-                else { None }
-            }
+                if is_valid_blk_offset(long_help_offset) {
+                    Some(long_help_offset)
+                } else {
+                    None
+                }
+            },
         })
     }
 }
@@ -397,14 +466,22 @@ pub struct ValueBlk {
     value: u64,
     string_offset: Option<u64>,
     metric_offset: Option<u64>,
-    instance_offset: Option<u64>
+    instance_offset: Option<u64>,
 }
 
 impl ValueBlk {
-    pub fn value(&self) -> u64 { self.value }
-    pub fn string_offset(&self) -> &Option<u64> { &self.string_offset }
-    pub fn metric_offset(&self) -> &Option<u64> { &self.metric_offset }
-    pub fn instance_offset(&self) -> &Option<u64> { &self.instance_offset }
+    pub fn value(&self) -> u64 {
+        self.value
+    }
+    pub fn string_offset(&self) -> &Option<u64> {
+        &self.string_offset
+    }
+    pub fn metric_offset(&self) -> &Option<u64> {
+        &self.metric_offset
+    }
+    pub fn instance_offset(&self) -> &Option<u64> {
+        &self.instance_offset
+    }
 }
 
 impl ValueBlk {
@@ -417,16 +494,25 @@ impl ValueBlk {
         Ok(ValueBlk {
             value: value,
             string_offset: {
-                if is_valid_blk_offset(string_offset) { Some(string_offset) }
-                else { None }
+                if is_valid_blk_offset(string_offset) {
+                    Some(string_offset)
+                } else {
+                    None
+                }
             },
             metric_offset: {
-                if is_valid_blk_offset(metric_offset) { Some(metric_offset) }
-                else { None }
+                if is_valid_blk_offset(metric_offset) {
+                    Some(metric_offset)
+                } else {
+                    None
+                }
             },
             instance_offset: {
-                if is_valid_blk_offset(instance_offset) { Some(instance_offset) }
-                else { None }
+                if is_valid_blk_offset(instance_offset) {
+                    Some(instance_offset)
+                } else {
+                    None
+                }
             },
         })
     }
@@ -441,15 +527,25 @@ pub struct IndomBlk {
     instances: u32,
     instances_offset: Option<u64>,
     short_help_offset: Option<u64>,
-    long_help_offset: Option<u64>
+    long_help_offset: Option<u64>,
 }
 
 impl IndomBlk {
-    pub fn indom(&self) -> &Option<u32> { &self.indom }
-    pub fn instances(&self) -> u32 { self.instances }
-    pub fn instances_offset(&self) -> &Option<u64> { &self.instances_offset }
-    pub fn short_help_offset(&self) -> &Option<u64> { &self.short_help_offset }
-    pub fn long_help_offset(&self) -> &Option<u64> { &self.long_help_offset }
+    pub fn indom(&self) -> &Option<u32> {
+        &self.indom
+    }
+    pub fn instances(&self) -> u32 {
+        self.instances
+    }
+    pub fn instances_offset(&self) -> &Option<u64> {
+        &self.instances_offset
+    }
+    pub fn short_help_offset(&self) -> &Option<u64> {
+        &self.short_help_offset
+    }
+    pub fn long_help_offset(&self) -> &Option<u64> {
+        &self.long_help_offset
+    }
 }
 
 impl IndomBlk {
@@ -462,22 +558,34 @@ impl IndomBlk {
 
         Ok(IndomBlk {
             indom: {
-                if is_valid_indom(indom) { Some(indom) }
-                else { None }
+                if is_valid_indom(indom) {
+                    Some(indom)
+                } else {
+                    None
+                }
             },
             instances: instances,
             instances_offset: {
-                if is_valid_blk_offset(instances_offset) { Some(instances_offset) }
-                else { None }
+                if is_valid_blk_offset(instances_offset) {
+                    Some(instances_offset)
+                } else {
+                    None
+                }
             },
             short_help_offset: {
-                if is_valid_blk_offset(short_help_offset) { Some(short_help_offset) }
-                else { None }
+                if is_valid_blk_offset(short_help_offset) {
+                    Some(short_help_offset)
+                } else {
+                    None
+                }
             },
             long_help_offset: {
-                if is_valid_blk_offset(long_help_offset) { Some(long_help_offset) }
-                else { None }
-            }
+                if is_valid_blk_offset(long_help_offset) {
+                    Some(long_help_offset)
+                } else {
+                    None
+                }
+            },
         })
     }
 }
@@ -490,14 +598,22 @@ pub struct InstanceBlk {
     indom_offset: Option<u64>,
     pad: u32,
     internal_id: i32,
-    external_id: VersionSpecificString
+    external_id: VersionSpecificString,
 }
 
 impl InstanceBlk {
-    pub fn indom_offset(&self) -> &Option<u64> { &self.indom_offset }
-    pub fn pad(&self) -> u32 { self.pad }
-    pub fn internal_id(&self) -> i32 { self.internal_id }
-    pub fn external_id(&self) -> &VersionSpecificString { &self.external_id }
+    pub fn indom_offset(&self) -> &Option<u64> {
+        &self.indom_offset
+    }
+    pub fn pad(&self) -> u32 {
+        self.pad
+    }
+    pub fn internal_id(&self) -> i32 {
+        self.internal_id
+    }
+    pub fn external_id(&self) -> &VersionSpecificString {
+        &self.external_id
+    }
 }
 
 impl InstanceBlk {
@@ -515,25 +631,23 @@ impl InstanceBlk {
             Version::V1 => {
                 let mut external_id_bytes = [0; MMV1_NAME_MAX_LEN as usize];
                 r.read_exact(&mut external_id_bytes)?;
-                let cstr = unsafe {
-                    CStr::from_ptr(external_id_bytes.as_ptr() as *const i8)
-                };
+                let cstr = unsafe { CStr::from_ptr(external_id_bytes.as_ptr() as *const i8) };
                 VersionSpecificString::String(cstr.to_str()?.to_owned())
-            },
-            Version::V2 => {
-                VersionSpecificString::Offset(r.read_u64::<Endian>()?)
             }
+            Version::V2 => VersionSpecificString::Offset(r.read_u64::<Endian>()?),
         };
-        
 
         Ok(InstanceBlk {
             indom_offset: {
-                if is_valid_blk_offset(indom_offset) { Some(indom_offset) }
-                else { None }
+                if is_valid_blk_offset(indom_offset) {
+                    Some(indom_offset)
+                } else {
+                    None
+                }
             },
             pad: pad,
             internal_id: internal_id,
-            external_id: external_id
+            external_id: external_id,
         })
     }
 }
@@ -543,25 +657,23 @@ impl InstanceBlk {
 /// For reference to the C API, see
 /// https://github.com/performancecopilot/pcp/blob/master/src/include/pcp/mmv_dev.h#L60
 pub struct StringBlk {
-    string: String
+    string: String,
 }
 
 impl StringBlk {
-    pub fn string(&self) -> &str { &self.string }
+    pub fn string(&self) -> &str {
+        &self.string
+    }
 }
 
 impl StringBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
         let mut bytes = [0; STRING_BLOCK_LEN as usize];
         r.read_exact(&mut bytes)?;
-        let cstr = unsafe {
-            CStr::from_ptr(bytes.as_ptr() as *const i8)
-        };
+        let cstr = unsafe { CStr::from_ptr(bytes.as_ptr() as *const i8) };
         let string = cstr.to_str()?.to_owned();
 
-        Ok(StringBlk {
-            string: string
-        })
+        Ok(StringBlk { string: string })
     }
 }
 
@@ -608,7 +720,7 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     file.read_to_end(&mut mmv_bytes)?;
 
     let mut cursor = Cursor::new(mmv_bytes);
-    
+
     let hdr = Header::from_reader(&mut cursor)?;
 
     let mut indom_toc = None;
@@ -623,11 +735,17 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
         toc._toc_index = i;
         toc._mmv_offset = toc_position;
 
-        if toc.sec == INDOM_TOC_CODE { indom_toc = Some(toc); }
-        else if toc.sec == INSTANCE_TOC_CODE { instance_toc = Some(toc); }
-        else if toc.sec == METRIC_TOC_CODE { metric_toc = Some(toc); }
-        else if toc.sec == VALUES_TOC_CODE { value_toc = Some(toc); }
-        else if toc.sec == STRINGS_TOC_CODE { string_toc = Some(toc); }
+        if toc.sec == INDOM_TOC_CODE {
+            indom_toc = Some(toc);
+        } else if toc.sec == INSTANCE_TOC_CODE {
+            instance_toc = Some(toc);
+        } else if toc.sec == METRIC_TOC_CODE {
+            metric_toc = Some(toc);
+        } else if toc.sec == VALUES_TOC_CODE {
+            value_toc = Some(toc);
+        } else if toc.sec == STRINGS_TOC_CODE {
+            string_toc = Some(toc);
+        }
     }
 
     if metric_toc.is_none() {
@@ -643,19 +761,17 @@ pub fn dump(mmv_path: &Path) -> Result<MMV, MMVDumpError> {
     let value_blks = blks_from_toc!(value_toc, ValueBlk, cursor);
     let string_blks = blks_from_toc!(string_toc, StringBlk, cursor);
 
-    Ok(
-        MMV {
-            header: hdr,
-            metric_toc: metric_toc.unwrap(),
-            value_toc: value_toc.unwrap(),
-            string_toc: string_toc,
-            indom_toc: indom_toc,
-            instance_toc: instance_toc,
-            indom_blks: indom_blks,
-            instance_blks: instance_blks,
-            metric_blks: metric_blks,
-            value_blks: value_blks,
-            string_blks: string_blks
-        }
-    )
+    Ok(MMV {
+        header: hdr,
+        metric_toc: metric_toc.unwrap(),
+        value_toc: value_toc.unwrap(),
+        string_toc: string_toc,
+        indom_toc: indom_toc,
+        instance_toc: instance_toc,
+        indom_blks: indom_blks,
+        instance_blks: instance_blks,
+        metric_blks: metric_blks,
+        value_blks: value_blks,
+        string_blks: string_blks,
+    })
 }
