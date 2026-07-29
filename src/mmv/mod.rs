@@ -1,4 +1,4 @@
-use byteorder::ReadBytesExt;
+use crate::byteio::ReadBytesExt;
 use std::collections::BTreeMap;
 use std::ffi::CStr; // Used to read null-terminated strings in MMV files
 use std::fmt;
@@ -69,9 +69,7 @@ impl fmt::Display for MTCode {
     }
 }
 
-use super::{
-    Endian, CLUSTER_ID_BIT_LEN, INDOM_BIT_LEN, ITEM_BIT_LEN, MMV1_NAME_MAX_LEN, STRING_BLOCK_LEN,
-};
+use super::{CLUSTER_ID_BIT_LEN, INDOM_BIT_LEN, ITEM_BIT_LEN, MMV1_NAME_MAX_LEN, STRING_BLOCK_LEN};
 
 fn is_valid_indom(indom: u32) -> bool {
     indom != 0 && (indom >> INDOM_BIT_LEN) == 0
@@ -246,7 +244,7 @@ impl Header {
             return_mmvdumperror!("Invalid MMV", 0);
         }
 
-        let version = r.read_u32::<Endian>()?;
+        let version = r.read_u32()?;
         let mmv_ver = match Version::from_u32(version) {
             Some(ver) => ver,
             None => {
@@ -254,21 +252,21 @@ impl Header {
             }
         };
 
-        let gen1 = r.read_i64::<Endian>()?;
-        let gen2 = r.read_i64::<Endian>()?;
+        let gen1 = r.read_i64()?;
+        let gen2 = r.read_i64()?;
         if gen1 != gen2 {
             return_mmvdumperror!("Generation timestamps don't match", 0);
         }
 
-        let toc_count = r.read_u32::<Endian>()?;
+        let toc_count = r.read_u32()?;
         if toc_count > 5 || toc_count < 2 {
             return_mmvdumperror!("Invalid TOC count", toc_count);
         }
 
-        let flags = r.read_u32::<Endian>()?;
-        let pid = r.read_i32::<Endian>()?;
+        let flags = r.read_u32()?;
+        let pid = r.read_i32()?;
 
-        let cluster_id = r.read_u32::<Endian>()?;
+        let cluster_id = r.read_u32()?;
         if !is_valid_cluster_id(cluster_id) {
             return_mmvdumperror!("Invalid cluster ID", cluster_id);
         }
@@ -318,14 +316,14 @@ impl TocBlk {
 
 impl TocBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
-        let sec = r.read_u32::<Endian>()?;
+        let sec = r.read_u32()?;
         if sec > 5 {
             return_mmvdumperror!("Invalid TOC type", sec);
         }
 
-        let entries = r.read_u32::<Endian>()?;
+        let entries = r.read_u32()?;
 
-        let sec_offset = r.read_u64::<Endian>()?;
+        let sec_offset = r.read_u64()?;
         if !is_valid_blk_offset(sec_offset) {
             return_mmvdumperror!("Invalid section offset", sec_offset);
         }
@@ -403,22 +401,22 @@ impl MetricBlk {
                 let cstr = unsafe { CStr::from_ptr(name_bytes.as_ptr() as *const i8) };
                 VersionSpecificString::String(cstr.to_str()?.to_owned())
             }
-            Version::V2 => VersionSpecificString::Offset(r.read_u64::<Endian>()?),
+            Version::V2 => VersionSpecificString::Offset(r.read_u64()?),
         };
 
-        let item = r.read_u32::<Endian>()?;
-        let typ = r.read_u32::<Endian>()?;
-        let sem = r.read_u32::<Endian>()?;
-        let unit = r.read_u32::<Endian>()?;
-        let indom = r.read_u32::<Endian>()?;
+        let item = r.read_u32()?;
+        let typ = r.read_u32()?;
+        let sem = r.read_u32()?;
+        let unit = r.read_u32()?;
+        let indom = r.read_u32()?;
 
-        let pad = r.read_u32::<Endian>()?;
+        let pad = r.read_u32()?;
         if pad != 0 {
             return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
-        let short_help_offset = r.read_u64::<Endian>()?;
-        let long_help_offset = r.read_u64::<Endian>()?;
+        let short_help_offset = r.read_u64()?;
+        let long_help_offset = r.read_u64()?;
 
         Ok(MetricBlk {
             name: name,
@@ -486,10 +484,10 @@ impl ValueBlk {
 
 impl ValueBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
-        let value = r.read_u64::<Endian>()?;
-        let string_offset = r.read_u64::<Endian>()?;
-        let metric_offset = r.read_u64::<Endian>()?;
-        let instance_offset = r.read_u64::<Endian>()?;
+        let value = r.read_u64()?;
+        let string_offset = r.read_u64()?;
+        let metric_offset = r.read_u64()?;
+        let instance_offset = r.read_u64()?;
 
         Ok(ValueBlk {
             value: value,
@@ -550,11 +548,11 @@ impl IndomBlk {
 
 impl IndomBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R) -> Result<Self, MMVDumpError> {
-        let indom = r.read_u32::<Endian>()?;
-        let instances = r.read_u32::<Endian>()?;
-        let instances_offset = r.read_u64::<Endian>()?;
-        let short_help_offset = r.read_u64::<Endian>()?;
-        let long_help_offset = r.read_u64::<Endian>()?;
+        let indom = r.read_u32()?;
+        let instances = r.read_u32()?;
+        let instances_offset = r.read_u64()?;
+        let short_help_offset = r.read_u64()?;
+        let long_help_offset = r.read_u64()?;
 
         Ok(IndomBlk {
             indom: {
@@ -618,14 +616,14 @@ impl InstanceBlk {
 
 impl InstanceBlk {
     fn from_reader<R: ReadBytesExt>(r: &mut R, ver: Version) -> Result<Self, MMVDumpError> {
-        let indom_offset = r.read_u64::<Endian>()?;
+        let indom_offset = r.read_u64()?;
 
-        let pad = r.read_u32::<Endian>()?;
+        let pad = r.read_u32()?;
         if pad != 0 {
             return_mmvdumperror!("Invalid pad bytes", pad);
         }
 
-        let internal_id = r.read_i32::<Endian>()?;
+        let internal_id = r.read_i32()?;
 
         let external_id = match ver {
             Version::V1 => {
@@ -634,7 +632,7 @@ impl InstanceBlk {
                 let cstr = unsafe { CStr::from_ptr(external_id_bytes.as_ptr() as *const i8) };
                 VersionSpecificString::String(cstr.to_str()?.to_owned())
             }
-            Version::V2 => VersionSpecificString::Offset(r.read_u64::<Endian>()?),
+            Version::V2 => VersionSpecificString::Offset(r.read_u64()?),
         };
 
         Ok(InstanceBlk {

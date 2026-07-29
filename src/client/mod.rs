@@ -1,6 +1,5 @@
-use byteorder::WriteBytesExt;
+use crate::byteio::WriteBytesExt;
 use memmap::{Mmap, Protection};
-use regex::bytes::Regex;
 use std::env;
 use std::ffi::{OsStr, OsString};
 use std::fmt;
@@ -10,14 +9,14 @@ use std::io;
 use std::io::prelude::*;
 use std::io::{BufReader, Cursor};
 use std::path::{Path, PathBuf, MAIN_SEPARATOR};
+use std::process;
 use std::str;
-use time;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::mmv::Version;
 use super::{
-    Endian, CLUSTER_ID_BIT_LEN, HDR_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1,
-    INSTANCE_BLOCK_LEN_MMV2, METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, STRING_BLOCK_LEN,
-    TOC_BLOCK_LEN, VALUE_BLOCK_LEN,
+    CLUSTER_ID_BIT_LEN, HDR_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1, INSTANCE_BLOCK_LEN_MMV2,
+    METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, STRING_BLOCK_LEN, TOC_BLOCK_LEN, VALUE_BLOCK_LEN,
 };
 
 pub mod metric;
@@ -26,27 +25,22 @@ use self::metric::{MMVWriter, MMVWriterState};
 static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
 static MMV_DIR_SUFFIX: &'static str = "mmv";
 
-#[cfg(unix)]
 fn get_process_id() -> i32 {
-    use nix;
-    nix::unistd::getpid()
-}
-
-#[cfg(windows)]
-fn get_process_id() -> i32 {
-    use kernel32;
-    unsafe { kernel32::GetCurrentProcessId() as i32 }
+    process::id() as i32
 }
 
 #[cfg(unix)]
-fn osstr_from_bytes(slice: &[u8]) -> &OsStr {
+fn osstr_from_bytes(slice: &[u8]) -> Option<&OsStr> {
     use std::os::unix::ffi::OsStrExt;
-    OsStr::from_bytes(slice)
+    Some(OsStr::from_bytes(slice))
 }
 
+/// Windows stores `OsStr` as WTF-8 and has no borrowed constructor from bytes,
+/// so the only route from `&[u8]` to `&OsStr` is via `&str`. Bytes that aren't
+/// valid UTF-8 are rejected rather than assumed.
 #[cfg(windows)]
-fn osstr_from_bytes(slice: &[u8]) -> &OsStr {
-    OsStr::new(unsafe { str::from_utf8_unchecked(slice) })
+fn osstr_from_bytes(slice: &[u8]) -> Option<&OsStr> {
+    str::from_utf8(slice).ok().map(OsStr::new)
 }
 
 fn get_pcp_root() -> PathBuf {
@@ -69,33 +63,46 @@ fn init_pcp_conf(pcp_root: &Path) -> io::Result<()> {
     parse_pcp_conf(pcp_conf)
 }
 
+/// Parses one `PCP_VARIABLE_NAME=value` line, per the syntax in
+/// `man 5 pcp.conf`: no space around the `=`, and values are unquoted and
+/// may contain spaces.
+///
+/// Returns `None` for anything else, including an unterminated last line.
+fn parse_pcp_conf_line(line: &[u8]) -> Option<(&[u8], &[u8])> {
+    let line = line.strip_suffix(b"\n")?;
+    let eq = line.iter().position(|&b| b == b'=')?;
+    let (key, val) = (&line[..eq], &line[eq + 1..]);
+
+    let suffix = key.strip_prefix(b"PCP_")?;
+    if suffix.is_empty()
+        || !suffix
+            .iter()
+            .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return None;
+    }
+
+    if val.len() < 2 {
+        return None;
+    }
+    let is_quote = |b: u8| b == b'"' || b == b'\'';
+    if is_quote(val[0]) || is_quote(val[val.len() - 1]) {
+        return None;
+    }
+
+    Some((key, val))
+}
+
 fn parse_pcp_conf<P: AsRef<Path>>(conf_path: P) -> io::Result<()> {
     let pcp_conf = File::open(conf_path)?;
     let mut buf_reader = BufReader::new(pcp_conf);
 
-    /* According to man 5 pcp.conf, syntax rules for pcp.conf are
-        1. general syntax is PCP_VARIABLE_NAME=value to end of line
-        2. blank lines and lines begining with # are ignored
-        3. variable names that aren't prefixed with PCP_ are silently ignored
-        4. there should be no space between the variable name and the literal =
-        5. values may contain spaces and should not be quoted
-    */
-    lazy_static! {
-        static ref RE: Regex =
-            Regex::new("(?-u)^(PCP_[[:alnum:]_]+)=([^\"\'].*[^\"\'])\n$").unwrap();
-    }
-
     let mut line = Vec::new();
     while buf_reader.read_until(b'\n', &mut line)? > 0 {
-        match RE.captures(&line) {
-            Some(caps) => match (caps.get(1), caps.get(2)) {
-                (Some(key), Some(val)) => env::set_var(
-                    osstr_from_bytes(key.as_bytes()),
-                    osstr_from_bytes(val.as_bytes()),
-                ),
-                _ => {}
-            },
-            _ => {}
+        if let Some((key, val)) = parse_pcp_conf_line(&line) {
+            if let (Some(key), Some(val)) = (osstr_from_bytes(key), osstr_from_bytes(val)) {
+                env::set_var(key, val);
+            }
         }
         line.clear();
     }
@@ -306,7 +313,7 @@ impl Client {
 
         // unlock header; has to be done last
         c.set_position(ws.gen2_off);
-        c.write_i64::<Endian>(ws.gen)?;
+        c.write_i64(ws.gen)?;
 
         Ok(())
     }
@@ -332,24 +339,27 @@ fn write_mmv_header(
 
     // version
     match mmv_ver {
-        Version::V1 => c.write_u32::<Endian>(1)?,
-        Version::V2 => c.write_u32::<Endian>(2)?,
+        Version::V1 => c.write_u32(1)?,
+        Version::V2 => c.write_u32(2)?,
     }
 
     // generation1
-    ws.gen = time::now().to_timespec().sec;
-    c.write_i64::<Endian>(ws.gen)?;
+    ws.gen = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    c.write_i64(ws.gen)?;
     // generation2
     ws.gen2_off = c.position();
-    c.write_i64::<Endian>(0)?;
+    c.write_i64(0)?;
     // no. of toc blocks
-    c.write_u32::<Endian>(ws.n_toc as u32)?;
+    c.write_u32(ws.n_toc as u32)?;
     // flags
-    c.write_u32::<Endian>(ws.flags)?;
+    c.write_u32(ws.flags)?;
     // pid
-    c.write_i32::<Endian>(get_process_id())?;
+    c.write_i32(get_process_id())?;
     // cluster id
-    c.write_u32::<Endian>(ws.cluster_id)
+    c.write_u32(ws.cluster_id)
 }
 
 fn write_toc_block(
@@ -360,18 +370,18 @@ fn write_toc_block(
 ) -> io::Result<()> {
     if entries > 0 {
         // section type
-        c.write_u32::<Endian>(sec)?;
+        c.write_u32(sec)?;
         // no. of entries
-        c.write_u32::<Endian>(entries)?;
+        c.write_u32(entries)?;
         // section offset
-        c.write_u64::<Endian>(sec_off)?;
+        c.write_u64(sec_off)?;
     }
     Ok(())
 }
 
 #[test]
 fn test_mmv_header() {
-    use byteorder::ReadBytesExt;
+    use crate::byteio::ReadBytesExt;
     use rand::{thread_rng, Rng};
 
     let cluster_id = thread_rng().gen::<u32>();
@@ -392,20 +402,17 @@ fn test_mmv_header() {
     assert_eq!('V' as u8, cursor.read_u8().unwrap());
     assert_eq!(0, cursor.read_u8().unwrap());
     // test version number
-    assert_eq!(1, cursor.read_u32::<Endian>().unwrap());
+    assert_eq!(1, cursor.read_u32().unwrap());
     // test generation
-    assert_eq!(
-        cursor.read_i64::<Endian>().unwrap(),
-        cursor.read_i64::<Endian>().unwrap()
-    );
+    assert_eq!(cursor.read_i64().unwrap(), cursor.read_i64().unwrap());
     // test no. of toc blocks
-    assert_eq!(0, cursor.read_i32::<Endian>().unwrap());
+    assert_eq!(0, cursor.read_i32().unwrap());
     // test flags
-    assert_eq!(flags.bits(), cursor.read_u32::<Endian>().unwrap());
+    assert_eq!(flags.bits(), cursor.read_u32().unwrap());
     // test pid
-    assert_eq!(get_process_id(), cursor.read_i32::<Endian>().unwrap());
+    assert_eq!(get_process_id(), cursor.read_i32().unwrap());
     // cluster id
-    assert_eq!(client.cluster_id(), cursor.read_u32::<Endian>().unwrap());
+    assert_eq!(client.cluster_id(), cursor.read_u32().unwrap());
 }
 
 #[test]

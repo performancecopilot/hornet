@@ -1,6 +1,5 @@
 use super::*;
-use time;
-use time::Tm;
+use std::time::Instant;
 
 /// A timer metric for tracking elapsed time
 ///
@@ -8,7 +7,7 @@ use time::Tm;
 pub struct Timer {
     metric: Metric<i64>,
     time_scale: Time,
-    start_time: Option<Tm>,
+    start_time: Option<Instant>,
 }
 
 /// Error encountered while starting or stopping a timer
@@ -58,7 +57,7 @@ impl Timer {
         if self.start_time.is_some() {
             return Err(Error::TimerAlreadyStarted);
         }
-        self.start_time = Some(time::now());
+        self.start_time = Some(Instant::now());
         Ok(())
     }
 
@@ -70,15 +69,15 @@ impl Timer {
     pub fn stop(&mut self) -> Result<i64, Error> {
         match self.start_time {
             Some(start_time) => {
-                let duration = time::now() - start_time;
+                let duration = start_time.elapsed();
 
                 let elapsed = match self.time_scale {
-                    Time::NSec => duration.num_nanoseconds().unwrap_or(0),
-                    Time::USec => duration.num_microseconds().unwrap_or(0),
-                    Time::MSec => duration.num_microseconds().unwrap_or(0),
-                    Time::Sec => duration.num_seconds(),
-                    Time::Min => duration.num_minutes(),
-                    Time::Hour => duration.num_hours(),
+                    Time::NSec => duration.as_nanos() as i64,
+                    Time::USec => duration.as_micros() as i64,
+                    Time::MSec => duration.as_micros() as i64,
+                    Time::Sec => duration.as_secs() as i64,
+                    Time::Min => (duration.as_secs() / 60) as i64,
+                    Time::Hour => (duration.as_secs() / 3600) as i64,
                 };
 
                 let val = *self.metric.val();
