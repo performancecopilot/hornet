@@ -1,16 +1,9 @@
-extern crate byteorder;
 extern crate hdrsample;
 extern crate memmap;
-extern crate regex;
-extern crate time;
 #[macro_use]
 extern crate bitflags;
 #[macro_use]
 extern crate lazy_static;
-#[cfg(windows)]
-extern crate kernel32;
-#[cfg(unix)]
-extern crate nix;
 #[cfg(test)]
 extern crate rand;
 
@@ -32,10 +25,9 @@ const MMV1_NAME_MAX_LEN: u64 = 64;
 const INSTANCE_BLOCK_LEN_MMV2: u64 = 24;
 const METRIC_BLOCK_LEN_MMV2: u64 = 48;
 
-type Endian = byteorder::LittleEndian;
-
 #[macro_use]
 mod private;
+mod byteio;
 
 pub mod client;
 pub mod mmv;

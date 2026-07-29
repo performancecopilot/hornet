@@ -1,4 +1,4 @@
-use byteorder::WriteBytesExt;
+use crate::byteio::WriteBytesExt;
 use memmap::{Mmap, MmapViewSync, Protection};
 use std::collections::hash_map::{DefaultHasher, HashMap};
 use std::collections::hash_set::Iter;
@@ -12,9 +12,9 @@ use std::str;
 
 use super::super::mmv::{MTCode, Version};
 use super::super::{
-    Endian, INDOM_BIT_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1, INSTANCE_BLOCK_LEN_MMV2,
-    ITEM_BIT_LEN, METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, MMV1_NAME_MAX_LEN,
-    NUMERIC_VALUE_SIZE, STRING_BLOCK_LEN, VALUE_BLOCK_LEN,
+    INDOM_BIT_LEN, INDOM_BLOCK_LEN, INSTANCE_BLOCK_LEN_MMV1, INSTANCE_BLOCK_LEN_MMV2, ITEM_BIT_LEN,
+    METRIC_BLOCK_LEN_MMV1, METRIC_BLOCK_LEN_MMV2, MMV1_NAME_MAX_LEN, NUMERIC_VALUE_SIZE,
+    STRING_BLOCK_LEN, VALUE_BLOCK_LEN,
 };
 
 mod counter;
@@ -38,7 +38,7 @@ pub use self::histogram::Histogram;
 pub use self::histogram::RecordError as HistRecordError;
 
 mod private {
-    use byteorder::WriteBytesExt;
+    use crate::byteio::WriteBytesExt;
     use std::io;
 
     /// Generic type for any Metric's value
@@ -172,7 +172,7 @@ macro_rules! impl_metric_type_for (
 
             fn write<W: WriteBytesExt>(&self, w: &mut W)
             -> io::Result<()> {
-                w.write_u64::<super::Endian>(
+                w.write_u64(
                     unsafe {
                         mem::transmute::<$typ, $base_typ>(*self) as u64
                     }
@@ -820,28 +820,28 @@ impl<T: MetricType> Metric<T> {
             }
             Version::V2 => {
                 let name_off = write_mmv_string(ws, c, &self.name, false)?;
-                c.write_u64::<Endian>(name_off)?;
+                c.write_u64(name_off)?;
             }
         }
 
         // item
-        c.write_u32::<Endian>(self.item)?;
+        c.write_u32(self.item)?;
         // type code
-        c.write_u32::<Endian>(self.val.type_code())?;
+        c.write_u32(self.val.type_code())?;
         // sem
-        c.write_u32::<Endian>(self.sem as u32)?;
+        c.write_u32(self.sem as u32)?;
         // unit
-        c.write_u32::<Endian>(self.unit)?;
+        c.write_u32(self.unit)?;
         // indom
-        c.write_u32::<Endian>(self.indom)?;
+        c.write_u32(self.indom)?;
         // zero pad
-        c.write_u32::<Endian>(0)?;
+        c.write_u32(0)?;
         // short help
         let short_help_off = write_mmv_string(ws, c, &self.shorthelp, false)?;
-        c.write_u64::<Endian>(short_help_off)?;
+        c.write_u64(short_help_off)?;
         // long help
         let long_help_off = write_mmv_string(ws, c, &self.longhelp, false)?;
-        c.write_u64::<Endian>(long_help_off)?;
+        c.write_u64(long_help_off)?;
 
         if write_value_blk {
             let (value_offset, value_size) =
@@ -975,9 +975,9 @@ fn write_indom_and_instances<'a>(
     let indom_off = ws.indom_sec_off + INDOM_BLOCK_LEN * ws.indom_idx;
     c.set_position(indom_off);
     // indom id
-    c.write_u32::<Endian>(indom.id)?;
+    c.write_u32(indom.id)?;
     // number of instances
-    c.write_u32::<Endian>(indom.instance_count())?;
+    c.write_u32(indom.instance_count())?;
 
     // offset to instances
     let instance_blk_len = match mmv_ver {
@@ -985,14 +985,14 @@ fn write_indom_and_instances<'a>(
         Version::V2 => INSTANCE_BLOCK_LEN_MMV2,
     };
     let mut instance_blk_off = ws.instance_sec_off + instance_blk_len * ws.instance_idx;
-    c.write_u64::<Endian>(instance_blk_off)?;
+    c.write_u64(instance_blk_off)?;
 
     // short help
     let short_help_off = write_mmv_string(ws, c, indom.shorthelp(), false)?;
-    c.write_u64::<Endian>(short_help_off)?;
+    c.write_u64(short_help_off)?;
     // long help
     let long_help_off = write_mmv_string(ws, c, indom.longhelp(), false)?;
-    c.write_u64::<Endian>(long_help_off)?;
+    c.write_u64(long_help_off)?;
 
     // write instances and record their offsets
     let mut instance_blk_offs = HashMap::with_capacity(indom.instances.len());
@@ -1000,11 +1000,11 @@ fn write_indom_and_instances<'a>(
         c.set_position(instance_blk_off);
 
         // indom offset
-        c.write_u64::<Endian>(indom_off)?;
+        c.write_u64(indom_off)?;
         // zero pad
-        c.write_u32::<Endian>(0)?;
+        c.write_u32(0)?;
         // instance id
-        c.write_u32::<Endian>(Indom::instance_id(&instance))?;
+        c.write_u32(Indom::instance_id(&instance))?;
 
         // instance
         match mmv_ver {
@@ -1014,7 +1014,7 @@ fn write_indom_and_instances<'a>(
             }
             Version::V2 => {
                 let instance_off = write_mmv_string(ws, c, instance, false)?;
-                c.write_u64::<Endian>(instance_off)?;
+                c.write_u64(instance_off)?;
             }
         }
 
@@ -1060,7 +1060,7 @@ fn write_value_block<T: MetricType>(
     let (value_offset, value_size);
     if value.type_code() == MTCode::String as u32 {
         // numeric value
-        c.write_u64::<Endian>(0)?;
+        c.write_u64(0)?;
 
         // string offset
 
@@ -1073,7 +1073,7 @@ fn write_value_block<T: MetricType>(
 
         let str_val = unsafe { str::from_utf8_unchecked(&str_buf) };
         let string_val_off = write_mmv_string(ws, c, str_val, true)?;
-        c.write_u64::<Endian>(string_val_off)?;
+        c.write_u64(string_val_off)?;
 
         value_offset = string_val_off as usize;
         value_size = STRING_BLOCK_LEN as usize;
@@ -1084,12 +1084,12 @@ fn write_value_block<T: MetricType>(
         // numeric value
         value.write(&mut c)?;
         // string offset
-        c.write_u64::<Endian>(0)?;
+        c.write_u64(0)?;
     }
     // offset to metric block
-    c.write_u64::<Endian>(metric_blk_off)?;
+    c.write_u64(metric_blk_off)?;
     // offset to instance block
-    c.write_u64::<Endian>(instance_blk_off)?;
+    c.write_u64(instance_blk_off)?;
 
     c.set_position(orig_pos);
     Ok((value_offset, value_size))
@@ -1347,7 +1347,7 @@ fn test_mmv2_string_blocks() {
 #[test]
 fn test_random_numeric_metrics() {
     use super::Client;
-    use byteorder::ReadBytesExt;
+    use crate::byteio::ReadBytesExt;
     use rand::{thread_rng, Rng};
 
     let mut metrics = Vec::new();
@@ -1409,14 +1409,14 @@ fn test_random_numeric_metrics() {
 
     for (m, v) in metrics.iter_mut().zip(new_vals) {
         let mut slice = unsafe { m.mmap_view.as_slice() };
-        assert_eq!(v, slice.read_u64::<super::Endian>().unwrap() as u32);
+        assert_eq!(v, slice.read_u64().unwrap() as u32);
     }
 }
 
 #[test]
 fn test_simple_metrics() {
     use super::Client;
-    use byteorder::ReadBytesExt;
+    use crate::byteio::ReadBytesExt;
     use rand::{thread_rng, Rng};
     use std::ffi::CStr;
     use std::mem::transmute;
@@ -1471,7 +1471,7 @@ fn test_simple_metrics() {
 
     let mut freq_slice = unsafe { freq.mmap_view.as_slice() };
     assert_eq!(new_freq, unsafe {
-        transmute::<u64, f64>(freq_slice.read_u64::<super::Endian>().unwrap())
+        transmute::<u64, f64>(freq_slice.read_u64().unwrap())
     });
 
     let color_slice = unsafe { color.mmap_view.as_slice() };
@@ -1479,10 +1479,7 @@ fn test_simple_metrics() {
     assert_eq!(new_color, cstr.to_str().unwrap());
 
     let mut photon_slice = unsafe { photons.mmap_view.as_slice() };
-    assert_eq!(
-        new_photon_count,
-        photon_slice.read_u64::<super::Endian>().unwrap() as u32
-    );
+    assert_eq!(new_photon_count, photon_slice.read_u64().unwrap() as u32);
 
     // TODO: after implementing mmvdump functionality, test the
     // bytes of the entier MMV file
