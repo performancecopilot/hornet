@@ -283,7 +283,7 @@ impl Client {
             .truncate(true)
             .open(&self.mmv_path)?;
 
-        file.write(&vec![0; mmv_size])?;
+        file.write_all(&vec![0; mmv_size])?;
 
         ws.mmap_view = Some(Mmap::open(&file, Protection::ReadWrite)?.into_view_sync());
 
