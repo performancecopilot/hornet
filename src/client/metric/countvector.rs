@@ -204,7 +204,7 @@ pub fn test_multiple_initvals() {
     assert_eq!(cv.val("b").unwrap(), 2);
     assert_eq!(cv.val("c").unwrap(), 3);
 
-    Client::new("count_vector_test")
+    Client::new("count_vector_multiple_initvals_test")
         .unwrap()
         .export(&mut [&mut cv])
         .unwrap();
