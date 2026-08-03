@@ -8,6 +8,7 @@ use std::io;
 use std::io::{Cursor, Write};
 use std::mem;
 use std::str;
+use std::sync::LazyLock;
 
 use super::super::mmv::{MTCode, Version};
 use super::super::{
@@ -584,9 +585,8 @@ pub struct Metric<T> {
     mmap_view: MmapView,
 }
 
-lazy_static! {
-    static ref SCRATCH_VIEW: MmapView = MmapView::anonymous(STRING_BLOCK_LEN as usize).unwrap();
-}
+static SCRATCH_VIEW: LazyLock<MmapView> =
+    LazyLock::new(|| MmapView::anonymous(STRING_BLOCK_LEN as usize).unwrap());
 
 impl<T: MetricType + Clone> Metric<T> {
     /// Creates a new PCP MMV Metric

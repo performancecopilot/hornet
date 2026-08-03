@@ -2,6 +2,7 @@
 name = "hornet"
 version = "0.1.0"
 authors = ["Saurav Sachidanand <sauravsachidanand@gmail.com>"]
+rust-version = "1.84"
 license = "MIT OR Apache-2.0"
 description = "A Rust implementation of the PCP instrumentation API"
 repository = "https://github.com/performancecopilot/hornet"
@@ -11,12 +12,8 @@ keywords = ["performance", "instrumentation", "metric", "pcp", "mmv"]
 [dependencies]
 bitflags = "0.9.1"
 hdrsample = "4.0.0"
-lazy_static = "0.2.8"
 memmap2 = "0.9"
 
 [dev-dependencies]
 rand = "0.3.15"
-hyper = "0.11.2"
-futures = "0.1.14"
-curl = "0.4.8"
-iron = "0.5.1"
+tempfile = "3"
