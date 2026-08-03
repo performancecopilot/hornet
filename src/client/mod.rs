@@ -54,22 +54,27 @@ fn init_pcp_conf(pcp_root: &Path) -> io::Result<()> {
     /* attempt to load variables from pcp_root/etc/pcp.conf into environment.
     if pcp_root/etc/pcp.conf is not a file, can't be read, or parsing it
     fails, we *don't* return the error */
-    parse_pcp_conf(pcp_root.join("etc").join("pcp.conf")).ok();
+    if let Ok(values) = parse_pcp_conf(pcp_root.join("etc").join("pcp.conf")) {
+        apply_pcp_conf(values);
+    }
 
     /* attempt to load variables from pcp_root/$PCP_CONF into environment.
     if pcp_root/$PCP_CONF is not a file, can't be read, or parsing it
     fails, we *do* return the error */
     let pcp_conf = pcp_root.join(env::var_os("PCP_CONF").unwrap_or(OsString::new()));
-    parse_pcp_conf(pcp_conf)
+    let values = parse_pcp_conf(pcp_conf)?;
+    apply_pcp_conf(values);
+    Ok(())
 }
 
 /// Parses one `PCP_VARIABLE_NAME=value` line, per the syntax in
 /// `man 5 pcp.conf`: no space around the `=`, and values are unquoted and
 /// may contain spaces.
 ///
-/// Returns `None` for anything else, including an unterminated last line.
+/// Returns `None` for anything else.
 fn parse_pcp_conf_line(line: &[u8]) -> Option<(&[u8], &[u8])> {
-    let line = line.strip_suffix(b"\n")?;
+    let line = line.strip_suffix(b"\n").unwrap_or(line);
+    let line = line.strip_suffix(b"\r").unwrap_or(line);
     let eq = line.iter().position(|&b| b == b'=')?;
     let (key, val) = (&line[..eq], &line[eq + 1..]);
 
@@ -82,32 +87,43 @@ fn parse_pcp_conf_line(line: &[u8]) -> Option<(&[u8], &[u8])> {
         return None;
     }
 
-    if val.len() < 2 {
-        return None;
-    }
     let is_quote = |b: u8| b == b'"' || b == b'\'';
-    if is_quote(val[0]) || is_quote(val[val.len() - 1]) {
+    if val.first().map_or(false, |&b| is_quote(b)) {
         return None;
     }
 
     Some((key, val))
 }
 
-fn parse_pcp_conf<P: AsRef<Path>>(conf_path: P) -> io::Result<()> {
+fn parse_pcp_conf<P: AsRef<Path>>(conf_path: P) -> io::Result<Vec<(OsString, OsString)>> {
     let pcp_conf = File::open(conf_path)?;
     let mut buf_reader = BufReader::new(pcp_conf);
 
+    let mut values = Vec::new();
     let mut line = Vec::new();
     while buf_reader.read_until(b'\n', &mut line)? > 0 {
         if let Some((key, val)) = parse_pcp_conf_line(&line) {
             if let (Some(key), Some(val)) = (osstr_from_bytes(key), osstr_from_bytes(val)) {
-                env::set_var(key, val);
+                values.push((key.to_os_string(), val.to_os_string()));
             }
         }
         line.clear();
     }
 
-    Ok(())
+    Ok(values)
+}
+
+fn unset_pcp_conf_values(
+    values: impl IntoIterator<Item = (OsString, OsString)>,
+    is_set: impl Fn(&OsStr) -> bool,
+) -> Vec<(OsString, OsString)> {
+    values.into_iter().filter(|(key, _)| !is_set(key)).collect()
+}
+
+fn apply_pcp_conf(values: Vec<(OsString, OsString)>) {
+    for (key, val) in unset_pcp_conf_values(values, |key| env::var_os(key).is_some()) {
+        env::set_var(key, val);
+    }
 }
 
 fn get_mmv_dir() -> io::Result<PathBuf> {
@@ -431,47 +447,39 @@ fn test_mmv_dir() {
 }
 
 #[test]
-fn test_init_pcp_conf() {
-    let conf_keys = vec![
-        "PCP_VERSION",
-        "PCP_USER",
-        "PCP_GROUP",
-        "PCP_PLATFORM",
-        "PCP_PLATFORM_PATHS",
-        "PCP_ETC_DIR",
-        "PCP_SYSCONF_DIR",
-        "PCP_SYSCONFIG_DIR",
-        "PCP_RC_DIR",
-        "PCP_BIN_DIR",
-        "PCP_BINADM_DIR",
-        "PCP_LIB_DIR",
-        "PCP_LIB32_DIR",
-        "PCP_SHARE_DIR",
-        "PCP_INC_DIR",
-        "PCP_MAN_DIR",
-        "PCP_PMCDCONF_PATH",
-        "PCP_PMCDOPTIONS_PATH",
-        "PCP_PMCDRCLOCAL_PATH",
-        "PCP_PMPROXYOPTIONS_PATH",
-        "PCP_PMWEBDOPTIONS_PATH",
-        "PCP_PMMGROPTIONS_PATH",
-        "PCP_PMIECONTROL_PATH",
-        "PCP_PMSNAPCONTROL_PATH",
-        "PCP_PMLOGGERCONTROL_PATH",
-        "PCP_PMDAS_DIR",
-        "PCP_RUN_DIR",
-        "PCP_PMDAS_DIR",
-        "PCP_LOG_DIR",
-        "PCP_TMP_DIR",
-        "PCP_TMPFILE_DIR",
-        "PCP_DOC_DIR",
-        "PCP_DEMOS_DIR",
-    ];
+fn test_parse_pcp_conf_fixture() {
+    let tmp = tempfile::tempdir().unwrap();
+    let conf = tmp.path().join("pcp.conf");
+    fs::write(
+        &conf,
+        b"# comments and blank lines are ignored\r\n\
+          PCP_TMP_DIR=/tmp/from-file\r\n\
+          PCP_USER=hornet\r\n\
+          PCP_EMPTY=\r\n\
+          PCP_QUOTED=\"not accepted\"\r\n\
+          NOT_PCP=ignored\r\n",
+    )
+    .unwrap();
 
-    let pcp_root = get_pcp_root();
-    if init_pcp_conf(&pcp_root).is_ok() {
-        for key in conf_keys.iter() {
-            env::var(key).expect(&format!("{} not set", key));
-        }
-    }
+    let values = parse_pcp_conf(&conf).unwrap();
+    assert_eq!(
+        values,
+        vec![
+            (
+                OsString::from("PCP_TMP_DIR"),
+                OsString::from("/tmp/from-file"),
+            ),
+            (OsString::from("PCP_USER"), OsString::from("hornet")),
+            (OsString::from("PCP_EMPTY"), OsString::new()),
+        ]
+    );
+
+    let values_to_set = unset_pcp_conf_values(values, |key| key == OsStr::new(PCP_TMP_DIR_KEY));
+    assert_eq!(
+        values_to_set,
+        vec![
+            (OsString::from("PCP_USER"), OsString::from("hornet")),
+            (OsString::from("PCP_EMPTY"), OsString::new()),
+        ]
+    );
 }

@@ -1,4 +1,4 @@
-# hornet [![crates.io badge](https://img.shields.io/crates/v/hornet.svg)](https://crates.io/crates/hornet) [![docs.rs badge](https://docs.rs/hornet/badge.svg)](https://docs.rs/hornet/0.1.0/hornet/) [![Travis CI Build Status](https://travis-ci.org/performancecopilot/hornet.svg?branch=master)](https://travis-ci.org/performancecopilot/hornet) [![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/ccvbo3chne8046vn/branch/master?svg=true)](https://ci.appveyor.com/project/saurvs/hornet-2qtki/branch/master) [![codecov](https://codecov.io/gh/performancecopilot/hornet/branch/master/graph/badge.svg)](https://codecov.io/gh/performancecopilot/hornet)
+# hornet [![crates.io badge](https://img.shields.io/crates/v/hornet.svg)](https://crates.io/crates/hornet) [![docs.rs badge](https://docs.rs/hornet/badge.svg)](https://docs.rs/hornet/0.1.0/hornet/) [![CI](https://github.com/performancecopilot/hornet/actions/workflows/ci.yml/badge.svg)](https://github.com/performancecopilot/hornet/actions/workflows/ci.yml)
 
 `hornet` is a Performance Co-Pilot (PCP) Memory Mapped Values (MMV) instrumentation library written in Rust.
 

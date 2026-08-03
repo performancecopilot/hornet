@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: ['**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Build
+        run: cargo build --lib --bins --verbose
+
+      - name: Test
+        run: cargo test --verbose
+
+      - name: Clippy
+        run: cargo clippy --lib --bins --tests --verbose
+
+  # Guards the rust-version in Cargo.toml so the declared MSRV can't silently
+  # drift above the floor. The toolchain action pins 1.85 as this job's
+  # default, so a bare cargo invocation builds against it.
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.85"
+
+      - name: Build with MSRV
+        run: cargo build --lib --bins --verbose
+
+      - name: Test with MSRV
+        run: cargo test --verbose

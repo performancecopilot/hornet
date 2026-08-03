@@ -2,10 +2,10 @@ extern crate hdrsample;
 extern crate memmap2;
 #[macro_use]
 extern crate bitflags;
-#[macro_use]
-extern crate lazy_static;
 #[cfg(test)]
 extern crate rand;
+#[cfg(test)]
+extern crate tempfile;
 
 const CLUSTER_ID_BIT_LEN: usize = 12;
 const ITEM_BIT_LEN: usize = 10;
