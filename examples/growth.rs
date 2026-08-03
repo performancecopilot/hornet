@@ -1,6 +1,3 @@
-extern crate hornet;
-extern crate rand;
-
 use hornet::client::metric::*;
 use hornet::client::Client;
 use std::thread;

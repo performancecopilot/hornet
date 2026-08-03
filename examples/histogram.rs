@@ -1,14 +1,10 @@
-extern crate hornet;
-extern crate rand;
-
 use hornet::client::metric::*;
 use hornet::client::Client;
-use rand::distributions::{IndependentSample, Range};
-use rand::thread_rng;
+use rand::Rng;
 
 /*
     For detailed usage and behaviour of the underlying HDR histogram object,
-    check out jonhoo's hdrsample crate at https://github.com/jonhoo/hdrsample
+    check out the hdrhistogram crate at https://github.com/HdrHistogram/HdrHistogram_rust
 */
 
 fn main() {
@@ -42,15 +38,13 @@ fn main() {
 
     /* record 100 random values */
 
-    let range = Range::new(low, high);
-    let mut thread_rng = thread_rng();
+    let mut rng = rand::thread_rng();
 
     for _ in 0..100 {
-        hist.record(range.ind_sample(&mut thread_rng)).unwrap();
+        hist.record(rng.gen_range(low..high)).unwrap();
     }
 
     /* record a single random value 100 times */
 
-    hist.record_n(range.ind_sample(&mut thread_rng), 100)
-        .unwrap();
+    hist.record_n(rng.gen_range(low..high), 100).unwrap();
 }

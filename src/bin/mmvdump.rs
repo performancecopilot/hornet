@@ -1,5 +1,3 @@
-extern crate hornet;
-
 use hornet::mmv;
 use std::env;
 use std::path::Path;

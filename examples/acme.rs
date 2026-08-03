@@ -1,9 +1,6 @@
-extern crate hornet;
-extern crate rand;
-
 use hornet::client::metric::*;
 use hornet::client::Client;
-use rand::random;
+use rand::Rng;
 use std::thread;
 use std::time::Duration;
 
@@ -60,9 +57,9 @@ fn main() {
     /* update metrics */
 
     loop {
-        let rnd_idx = random::<usize>() % products.len();
+        let rnd_idx = rand::thread_rng().gen_range(0..products.len());
         let product = products[rnd_idx];
-        let working_time = random::<u64>() % 3;
+        let working_time = rand::thread_rng().gen_range(0..3);
         thread::sleep(Duration::from_secs(working_time));
 
         let count = *counts.val(product).unwrap();
