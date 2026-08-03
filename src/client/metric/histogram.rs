@@ -1,10 +1,10 @@
 use super::*;
-use hdrsample;
-use hdrsample::Histogram as HdrHist;
+use hdrhistogram;
+use hdrhistogram::Histogram as HdrHist;
 
 /// A histogram metric that records data and reports statistics
 ///
-/// Internally backed by a [HDR Histogram](https://github.com/jonhoo/hdrsample),
+/// Internally backed by a [HDR Histogram](https://github.com/HdrHistogram/HdrHistogram_rust),
 /// much of API and documentation being borrowed from it.
 ///
 /// Exports the `max`, `min`, `mean` and `stdev` statistics to an MMV
@@ -28,7 +28,7 @@ pub enum CreationError {
     /// Instance error
     Instance(String),
     /// HDR Histogram creation error
-    HdrHist(hdrsample::CreationError),
+    HdrHist(hdrhistogram::CreationError),
 }
 
 impl From<String> for CreationError {
@@ -37,8 +37,8 @@ impl From<String> for CreationError {
     }
 }
 
-impl From<hdrsample::CreationError> for CreationError {
-    fn from(err: hdrsample::CreationError) -> CreationError {
+impl From<hdrhistogram::CreationError> for CreationError {
+    fn from(err: hdrhistogram::CreationError) -> CreationError {
         CreationError::HdrHist(err)
     }
 }
@@ -49,7 +49,7 @@ pub enum RecordError {
     /// IO error
     Io(io::Error),
     /// HDR histogram record error
-    HdrHist(hdrsample::RecordError),
+    HdrHist(hdrhistogram::RecordError),
 }
 
 impl From<io::Error> for RecordError {
@@ -58,8 +58,8 @@ impl From<io::Error> for RecordError {
     }
 }
 
-impl From<hdrsample::RecordError> for RecordError {
-    fn from(err: hdrsample::RecordError) -> RecordError {
+impl From<hdrhistogram::RecordError> for RecordError {
+    fn from(err: hdrhistogram::RecordError) -> RecordError {
         RecordError::HdrHist(err)
     }
 }
@@ -145,11 +145,11 @@ impl Histogram {
     }
     /// Total number of samples recorded so far
     pub fn count(&self) -> u64 {
-        self.histogram.count()
+        self.histogram.len()
     }
     /// Number of distinct values that can currently be represented
     pub fn len(&self) -> usize {
-        self.histogram.len()
+        self.histogram.distinct_values()
     }
 
     /// Lowest recorded value
@@ -222,8 +222,7 @@ impl MMVWriter for Histogram {
 #[test]
 pub fn test() {
     use super::super::Client;
-    use rand::distributions::{IndependentSample, Range};
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
 
     let low = 1;
     let high = 60 * 60 * 1000;
@@ -236,14 +235,13 @@ pub fn test() {
         .export(&mut [&mut hist])
         .unwrap();
 
-    let val_range = Range::new(low, high);
-    let mut rng = thread_rng();
+    let mut rng = rand::thread_rng();
 
-    let n = thread_rng().gen::<u64>() % 100;
+    let n = rng.gen::<u64>() % 100;
     for _ in 0..n {
-        hist.record(val_range.ind_sample(&mut rng)).unwrap();
+        hist.record(rng.gen_range(low..high)).unwrap();
     }
-    hist.record_n(val_range.ind_sample(&mut rng), n).unwrap();
+    hist.record_n(rng.gen_range(low..high), n).unwrap();
 
     assert_eq!(*hist.im.val(MIN_INST).unwrap(), hist.histogram.min() as f64);
 

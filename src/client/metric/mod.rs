@@ -223,7 +223,7 @@ pub(super) use self::private::MetricType;
 pub(super) use self::private::{MMVWriter, MMVWriterState, MmapView};
 
 macro_rules! impl_metric_type_for (
-    ($typ:tt, $base_typ:tt, $type_code:expr) => (
+    ($typ:tt, $base_typ:tt, $type_code:expr_2021) => (
         impl MetricType for $typ {
 
             private_impl!{}
@@ -406,7 +406,7 @@ const COUNT_SCALE_LSB: u8 = 8;
 const LS_FOUR_BIT_MASK: u32 = 0xF;
 
 macro_rules! check_dim (
-    ($dim:expr) => (
+    ($dim:expr_2021) => (
         if $dim > 7 || $dim < -8 {
             return Err(format!("Unit dimension {} is out of range [-8, 7]", $dim))
         }
@@ -492,7 +492,7 @@ impl Unit {
 }
 
 macro_rules! write_dim (
-    ($dim:expr, $scale:expr, $scale_type:tt, $f:expr) => (
+    ($dim:expr_2021, $scale:expr_2021, $scale_type:tt, $f:expr_2021) => (
         if let Some(dim_scale) = $scale_type::from_u8($scale) {
             write!($f, "{}", dim_scale)?;
             if $dim.abs() > 1 {
@@ -1285,17 +1285,19 @@ fn test_units() {
     assert!(Unit::new().time(Time::Sec, -9).is_err());
 }
 
+#[cfg(test)]
+fn random_ascii(len: usize) -> String {
+    use rand::distributions::{Alphanumeric, DistString};
+
+    Alphanumeric.sample_string(&mut rand::thread_rng(), len)
+}
+
 #[test]
 fn test_invalid_strings() {
-    use rand::{thread_rng, Rng};
-
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let invalid_string: String = thread_rng()
-        .gen_ascii_chars()
-        .take(STRING_BLOCK_LEN as usize)
-        .collect();
+    let invalid_string = random_ascii(STRING_BLOCK_LEN as usize);
 
     assert!(Metric::new(&invalid_string, 0, sem, unit, "", "").is_err());
     assert!(Metric::new("", 0, sem, unit, &invalid_string, "").is_err());
@@ -1313,19 +1315,11 @@ fn test_invalid_strings() {
 
 #[test]
 fn test_mmv2_string_check() {
-    use rand::{thread_rng, Rng};
-
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let mmv1_string: String = thread_rng()
-        .gen_ascii_chars()
-        .take((MMV1_NAME_MAX_LEN - 1) as usize)
-        .collect();
-    let mmv2_string: String = thread_rng()
-        .gen_ascii_chars()
-        .take((STRING_BLOCK_LEN - 1) as usize)
-        .collect();
+    let mmv1_string = random_ascii((MMV1_NAME_MAX_LEN - 1) as usize);
+    let mmv2_string = random_ascii((STRING_BLOCK_LEN - 1) as usize);
 
     let mmv1_metric = Metric::new(&mmv1_string, 0, sem, unit, "", "").unwrap();
     assert_eq!(mmv1_metric.has_mmv2_string(), false);
@@ -1351,15 +1345,11 @@ fn test_mmv2_string_check() {
 fn test_mmv2_string_blocks() {
     use super::super::mmv::*;
     use super::Client;
-    use rand::{thread_rng, Rng};
 
     let sem = Semantics::Discrete;
     let unit = Unit::new();
 
-    let mmv2_string: String = thread_rng()
-        .gen_ascii_chars()
-        .take((STRING_BLOCK_LEN - 1) as usize)
-        .collect();
+    let mmv2_string = random_ascii((STRING_BLOCK_LEN - 1) as usize);
 
     let mut metric = Metric::new(&mmv2_string, 0, sem, unit, "", "").unwrap();
     let indom = Indom::new(&[&mmv2_string], "", "").unwrap();
@@ -1399,31 +1389,19 @@ fn test_mmv2_string_blocks() {
 fn test_random_numeric_metrics() {
     use super::Client;
     use crate::byteio::ReadBytesExt;
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
 
     let mut metrics = Vec::new();
     let mut new_vals = Vec::new();
-    let n_metrics = thread_rng().gen::<u8>() % 20;
+    let n_metrics = rand::thread_rng().gen::<u8>() % 20;
 
     let client = Client::new("numeric_metrics").unwrap();
 
     for _ in 1..n_metrics {
-        let rnd_name: String = thread_rng()
-            .gen_ascii_chars()
-            .take(MMV1_NAME_MAX_LEN as usize - 1)
-            .collect();
-
-        let rnd_shorthelp: String = thread_rng()
-            .gen_ascii_chars()
-            .take(STRING_BLOCK_LEN as usize - 1)
-            .collect();
-
-        let rnd_longhelp: String = thread_rng()
-            .gen_ascii_chars()
-            .take(STRING_BLOCK_LEN as usize - 1)
-            .collect();
-
-        let rnd_val1 = thread_rng().gen::<u32>();
+        let rnd_name = random_ascii(MMV1_NAME_MAX_LEN as usize - 1);
+        let rnd_shorthelp = random_ascii(STRING_BLOCK_LEN as usize - 1);
+        let rnd_longhelp = random_ascii(STRING_BLOCK_LEN as usize - 1);
+        let rnd_val1 = rand::thread_rng().gen::<u32>();
 
         let mut metric = Metric::new(
             &rnd_name,
@@ -1437,20 +1415,22 @@ fn test_random_numeric_metrics() {
 
         assert_eq!(*metric.val(), rnd_val1);
 
-        let rnd_val2 = thread_rng().gen::<u32>();
+        let rnd_val2 = rand::thread_rng().gen::<u32>();
         assert!(metric.set_val(rnd_val2).is_ok());
         assert_eq!(*metric.val(), rnd_val2);
 
         metrics.push(metric);
-        new_vals.push(thread_rng().gen::<u32>());
+        new_vals.push(rand::thread_rng().gen::<u32>());
     }
 
     {
         // mmv_writers needs to go out of scope before we can mutate
         // the metrics after exporting. The type annotation is needed
         // because type inference fails.
-        let mut mmv_writers: Vec<&mut MMVWriter> =
-            metrics.iter_mut().map(|m| m as &mut MMVWriter).collect();
+        let mut mmv_writers: Vec<&mut dyn MMVWriter> = metrics
+            .iter_mut()
+            .map(|m| m as &mut dyn MMVWriter)
+            .collect();
         client.export(&mut mmv_writers).unwrap();
     }
 
@@ -1469,7 +1449,7 @@ fn test_random_numeric_metrics() {
 fn test_simple_metrics() {
     use super::Client;
     use crate::byteio::ReadBytesExt;
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
     use std::ffi::CStr;
     use std::mem::transmute;
 
@@ -1477,7 +1457,7 @@ fn test_simple_metrics() {
     let hz = Unit::new().time(Time::Sec, -1).unwrap();
     let mut freq = Metric::new(
         "frequency",
-        thread_rng().gen::<f64>(),
+        rand::thread_rng().gen::<f64>(),
         Semantics::Instant,
         hz,
         "",
@@ -1499,7 +1479,7 @@ fn test_simple_metrics() {
     // u32 metric
     let mut photons = Metric::new(
         "photons",
-        thread_rng().gen::<u32>(),
+        rand::thread_rng().gen::<u32>(),
         Semantics::Counter,
         Unit::new().count(Count::One, 1).unwrap(),
         "No. of photons",
@@ -1512,13 +1492,13 @@ fn test_simple_metrics() {
         .export(&mut [&mut freq, &mut color, &mut photons])
         .unwrap();
 
-    let new_freq = thread_rng().gen::<f64>();
+    let new_freq = rand::thread_rng().gen::<f64>();
     assert!(freq.set_val(new_freq).is_ok());
 
     let new_color = String::from("magenta");
     assert!(color.set_val(new_color.clone()).is_ok());
 
-    let new_photon_count = thread_rng().gen::<u32>();
+    let new_photon_count = rand::thread_rng().gen::<u32>();
     assert!(photons.set_val(new_photon_count).is_ok());
 
     let freq_bytes = freq.mmap_view.to_vec();

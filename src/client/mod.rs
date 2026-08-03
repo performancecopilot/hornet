@@ -1,4 +1,5 @@
 use crate::byteio::WriteBytesExt;
+use bitflags::bitflags;
 use memmap2::MmapMut;
 use std::env;
 use std::ffi::{OsStr, OsString};
@@ -157,6 +158,7 @@ fn get_mmv_dir() -> io::Result<PathBuf> {
 
 bitflags! {
     /// Flags used to modify how a client exports metrics
+    #[derive(Clone, Copy)]
     pub struct MMVFlags: u32 {
         /// Metric names aren't prefixed with MMV filename
         const NOPREFIX = 1;
@@ -171,12 +173,12 @@ impl fmt::Display for MMVFlags {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut prev_flag = false;
 
-        if self.contains(NOPREFIX) {
+        if self.contains(MMVFlags::NOPREFIX) {
             write!(f, "no prefix")?;
             prev_flag = true;
         }
 
-        if self.contains(PROCESS) {
+        if self.contains(MMVFlags::PROCESS) {
             if prev_flag {
                 write!(f, ",")?;
             }
@@ -184,7 +186,7 @@ impl fmt::Display for MMVFlags {
             prev_flag = true;
         }
 
-        if self.contains(SENTINEL) {
+        if self.contains(MMVFlags::SENTINEL) {
             if prev_flag {
                 write!(f, ",")?;
             }
@@ -210,7 +212,7 @@ pub struct Client {
 impl Client {
     /// Creates a new client with `PROCESS` flag and `0` cluster ID
     pub fn new(name: &str) -> io::Result<Client> {
-        Client::new_custom(name, PROCESS, 0)
+        Client::new_custom(name, MMVFlags::PROCESS, 0)
     }
 
     /// Creates a new client with custom flags and cluster ID
@@ -232,7 +234,7 @@ impl Client {
     ///
     /// If an MMV file is already present at `mmv_path`, it's overwritten
     /// with the newer metrics.
-    pub fn export(&self, metrics: &mut [&mut MMVWriter]) -> io::Result<()> {
+    pub fn export(&self, metrics: &mut [&mut dyn MMVWriter]) -> io::Result<()> {
         let mut ws = MMVWriterState::new();
 
         let mut mmv_ver = Version::V1;
@@ -402,10 +404,10 @@ fn write_toc_block(
 #[test]
 fn test_mmv_header() {
     use crate::byteio::ReadBytesExt;
-    use rand::{thread_rng, Rng};
+    use rand::Rng;
 
-    let cluster_id = thread_rng().gen::<u32>();
-    let flags = PROCESS | SENTINEL;
+    let cluster_id = rand::thread_rng().gen::<u32>();
+    let flags = MMVFlags::PROCESS | MMVFlags::SENTINEL;
     let client = Client::new_custom("mmv_header_test", flags, cluster_id).unwrap();
 
     client.export(&mut []).unwrap();

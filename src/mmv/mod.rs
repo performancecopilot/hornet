@@ -111,7 +111,7 @@ impl From<str::Utf8Error> for MMVDumpError {
 }
 
 macro_rules! return_mmvdumperror (
-    ($err:expr, $val:expr) => (
+    ($err:expr_2021, $val:expr_2021) => (
         let mut err_str = $err.to_owned();
         err_str.push_str(&format!(": {}", $val));
         return Err(MMVDumpError::InvalidMMV(err_str));
@@ -676,7 +676,7 @@ impl StringBlk {
 }
 
 macro_rules! blks_from_toc (
-    ($toc:expr, $blk_typ:tt, $cursor:expr) => {
+    ($toc:expr_2021, $blk_typ:tt, $cursor:expr_2021) => {
         if let Some(ref toc) = $toc {
             let mut blks = BTreeMap::new();
 
@@ -692,7 +692,7 @@ macro_rules! blks_from_toc (
             BTreeMap::new()
         }
     };
-    ($toc:expr, $blk_typ:tt, $mmv_ver:expr, $cursor:expr) => {
+    ($toc:expr_2021, $blk_typ:tt, $mmv_ver:expr_2021, $cursor:expr_2021) => {
         if let Some(ref toc) = $toc {
             let mut blks = BTreeMap::new();
 
