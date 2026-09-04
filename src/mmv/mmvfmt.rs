@@ -1,7 +1,6 @@
 use super::super::client::metric::{Semantics, Unit};
 use super::super::client::MMVFlags;
 use super::*;
-use std::mem;
 
 impl fmt::Display for Header {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -72,8 +71,8 @@ fn write_version_specific_string(
     mmv: &MMV,
 ) -> fmt::Result {
     match string {
-        &VersionSpecificString::String(ref string) => write!(f, "{}", string),
-        &VersionSpecificString::Offset(ref offset) => {
+        VersionSpecificString::String(string) => write!(f, "{}", string),
+        VersionSpecificString::Offset(offset) => {
             let string = mmv.string_blks().get(offset).unwrap().string();
             write!(f, "{}", string)
         }
@@ -129,7 +128,7 @@ fn write_metrics(f: &mut fmt::Formatter, metric_toc: &TocBlk, mmv: &MMV) -> fmt:
         if let Some(item) = *metric.item() {
             write!(f, "  [{}/{}] ", item, offset)?;
             write_version_specific_string(f, metric.name(), mmv)?;
-            writeln!(f, "")?;
+            writeln!(f)?;
 
             write!(f, "      ")?;
             match MTCode::from_u32(metric.typ()) {
@@ -187,13 +186,13 @@ fn write_values(f: &mut fmt::Formatter, value_toc: &TocBlk, mmv: &MMV) -> fmt::R
 
     for (offset, value) in mmv.value_blks() {
         if let Some(ref metric_offset) = *value.metric_offset() {
-            let metric = mmv.metric_blks().get(&metric_offset).unwrap();
+            let metric = mmv.metric_blks().get(metric_offset).unwrap();
             if let Some(item) = *metric.item() {
                 write!(f, "  [{}/{}] ", item, offset)?;
                 write_version_specific_string(f, metric.name(), mmv)?;
 
                 if let Some(ref instance_offset) = *value.instance_offset() {
-                    let instance = mmv.instance_blks().get(&instance_offset).unwrap();
+                    let instance = mmv.instance_blks().get(instance_offset).unwrap();
                     write!(f, "[{} or \"", instance.internal_id())?;
                     write_version_specific_string(f, instance.external_id(), mmv)?;
                     write!(f, "\"]")?;
@@ -211,12 +210,11 @@ fn write_values(f: &mut fmt::Formatter, value_toc: &TocBlk, mmv: &MMV) -> fmt::R
                             MTCode::I64 => writeln!(f, "{}", value.value() as i64)?,
                             MTCode::I32 => writeln!(f, "{}", value.value() as i32)?,
                             MTCode::F32 => {
-                                let float =
-                                    unsafe { mem::transmute::<u32, f32>(value.value() as u32) };
+                                let float = f32::from_bits(value.value() as u32);
                                 writeln!(f, "{}", float)?
                             }
                             MTCode::F64 => {
-                                let double = unsafe { mem::transmute::<u64, f64>(value.value()) };
+                                let double = f64::from_bits(value.value());
                                 writeln!(f, "{}", double)?
                             }
                             MTCode::String => writeln!(f, "(no string offset)")?,
@@ -254,23 +252,23 @@ impl fmt::Display for MMV {
 
         if let Some(ref indom_toc) = self.indom_toc {
             write_indoms(f, indom_toc, self)?;
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
 
         if let Some(ref instance_toc) = self.instance_toc {
             write_instances(f, instance_toc, self)?;
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
 
         write_metrics(f, &self.metric_toc, self)?;
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         write_values(f, &self.value_toc, self)?;
-        writeln!(f, "")?;
+        writeln!(f)?;
 
         if let Some(ref string_toc) = self.string_toc {
             write_strings(f, string_toc, self)?;
-            writeln!(f, "")?;
+            writeln!(f)?;
         }
 
         Ok(())

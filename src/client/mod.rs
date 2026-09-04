@@ -23,8 +23,8 @@ use super::{
 pub mod metric;
 use self::metric::{MMVWriter, MMVWriterState, MmapView};
 
-static PCP_TMP_DIR_KEY: &'static str = "PCP_TMP_DIR";
-static MMV_DIR_SUFFIX: &'static str = "mmv";
+static PCP_TMP_DIR_KEY: &str = "PCP_TMP_DIR";
+static MMV_DIR_SUFFIX: &str = "mmv";
 
 fn get_process_id() -> i32 {
     process::id() as i32
@@ -62,7 +62,7 @@ fn init_pcp_conf(pcp_root: &Path) -> io::Result<()> {
     /* attempt to load variables from pcp_root/$PCP_CONF into environment.
     if pcp_root/$PCP_CONF is not a file, can't be read, or parsing it
     fails, we *do* return the error */
-    let pcp_conf = pcp_root.join(env::var_os("PCP_CONF").unwrap_or(OsString::new()));
+    let pcp_conf = pcp_root.join(env::var_os("PCP_CONF").unwrap_or_default());
     let values = parse_pcp_conf(pcp_conf)?;
     apply_pcp_conf(values);
     Ok(())
@@ -89,7 +89,7 @@ fn parse_pcp_conf_line(line: &[u8]) -> Option<(&[u8], &[u8])> {
     }
 
     let is_quote = |b: u8| b == b'"' || b == b'\'';
-    if val.first().map_or(false, |&b| is_quote(b)) {
+    if val.first().is_some_and(|&b| is_quote(b)) {
         return None;
     }
 
@@ -224,9 +224,9 @@ impl Client {
         let cluster_id = cluster_id & ((1 << CLUSTER_ID_BIT_LEN) - 1);
 
         Ok(Client {
-            flags: flags,
-            cluster_id: cluster_id,
-            mmv_path: mmv_path,
+            flags,
+            cluster_id,
+            mmv_path,
         })
     }
 
@@ -419,9 +419,9 @@ fn test_mmv_header() {
     let mut cursor = Cursor::new(header);
 
     // test "MMV\0"
-    assert_eq!('M' as u8, cursor.read_u8().unwrap());
-    assert_eq!('M' as u8, cursor.read_u8().unwrap());
-    assert_eq!('V' as u8, cursor.read_u8().unwrap());
+    assert_eq!(b'M', cursor.read_u8().unwrap());
+    assert_eq!(b'M', cursor.read_u8().unwrap());
+    assert_eq!(b'V', cursor.read_u8().unwrap());
     assert_eq!(0, cursor.read_u8().unwrap());
     // test version number
     assert_eq!(1, cursor.read_u32().unwrap());
@@ -441,8 +441,9 @@ fn test_mmv_header() {
 fn test_mmv_dir() {
     let pcp_root = get_pcp_root();
     let mmv_dir = get_mmv_dir().unwrap();
-    let tmp_dir =
-        PathBuf::from(env::var_os(PCP_TMP_DIR_KEY).expect(&format!("{} not set", PCP_TMP_DIR_KEY)));
+    let tmp_dir = PathBuf::from(
+        env::var_os(PCP_TMP_DIR_KEY).unwrap_or_else(|| panic!("{} not set", PCP_TMP_DIR_KEY)),
+    );
 
     assert!(mmv_dir.is_dir());
     assert_eq!(mmv_dir, pcp_root.join(tmp_dir).join(MMV_DIR_SUFFIX));

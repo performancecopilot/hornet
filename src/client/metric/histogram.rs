@@ -94,9 +94,9 @@ impl Histogram {
         histogram.auto(false);
 
         Ok(Histogram {
-            im: im,
-            indom: indom,
-            histogram: histogram,
+            im,
+            indom,
+            histogram,
         })
     }
 
@@ -150,6 +150,11 @@ impl Histogram {
     /// Number of distinct values that can currently be represented
     pub fn len(&self) -> usize {
         self.histogram.distinct_values()
+    }
+
+    /// Whether no samples have been recorded
+    pub fn is_empty(&self) -> bool {
+        self.count() == 0
     }
 
     /// Lowest recorded value
@@ -229,11 +234,17 @@ pub fn test() {
     let sigfig = 2;
 
     let mut hist = Histogram::new("histogram", low, high, sigfig, Unit::new(), "", "").unwrap();
+    assert!(hist.is_empty());
 
     Client::new("histogram_test")
         .unwrap()
         .export(&mut [&mut hist])
         .unwrap();
+
+    hist.record(low).unwrap();
+    assert!(!hist.is_empty());
+    hist.reset().unwrap();
+    assert!(hist.is_empty());
 
     let mut rng = rand::thread_rng();
 

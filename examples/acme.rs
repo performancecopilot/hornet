@@ -68,10 +68,8 @@ fn main() {
         let time = *times.val(product).unwrap();
         times.set_val(product, time + 1).unwrap().unwrap();
 
-        for i in 0..products.len() {
+        for (i, &queued_product) in products.iter().enumerate() {
             if i != rnd_idx {
-                let queued_product = products[i];
-
                 let queue_time = *queue_times.val(queued_product).unwrap();
                 queue_times
                     .set_val(queued_product, queue_time + 1)

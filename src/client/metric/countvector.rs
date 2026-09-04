@@ -61,9 +61,9 @@ impl CountVector {
         }
 
         Ok(CountVector {
-            im: im,
-            indom: indom,
-            init_vals: init_vals,
+            im,
+            indom,
+            init_vals,
         })
     }
 

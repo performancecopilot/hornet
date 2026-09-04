@@ -45,8 +45,8 @@ impl Timer {
         )?;
 
         Ok(Timer {
-            metric: metric,
-            time_scale: time_scale,
+            metric,
+            time_scale,
             start_time: None,
         })
     }

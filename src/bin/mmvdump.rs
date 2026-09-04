@@ -6,5 +6,5 @@ fn main() {
     let path_arg = env::args().nth(1).expect("Specify path to mmv file");
     let mmv_path = Path::new(&path_arg);
 
-    print!("{}", mmv::dump(&mmv_path).unwrap());
+    print!("{}", mmv::dump(mmv_path).unwrap());
 }
