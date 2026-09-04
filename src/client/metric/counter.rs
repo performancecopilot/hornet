@@ -27,10 +27,7 @@ impl Counter {
             longhelp_text,
         )?;
 
-        Ok(Counter {
-            metric: metric,
-            init_val: init_val,
-        })
+        Ok(Counter { metric, init_val })
     }
 
     /// Returns the current value of the counter

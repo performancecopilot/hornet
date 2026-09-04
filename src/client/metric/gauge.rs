@@ -27,10 +27,7 @@ impl Gauge {
             longhelp_text,
         )?;
 
-        Ok(Gauge {
-            metric: metric,
-            init_val: init_val,
-        })
+        Ok(Gauge { metric, init_val })
     }
 
     /// Returns the current value of the gauge

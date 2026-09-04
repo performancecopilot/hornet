@@ -34,9 +34,9 @@ impl GaugeVector {
         )?;
 
         Ok(GaugeVector {
-            im: im,
-            indom: indom,
-            init_val: init_val,
+            im,
+            indom,
+            init_val,
         })
     }
 

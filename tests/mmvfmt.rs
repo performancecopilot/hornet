@@ -17,7 +17,7 @@ fn test_mmvfmt() {
 
     for i in 1..tests + 1 {
         let mut output_path = testdata_dir.clone();
-        output_path.push(&format!("{}{}{}", output_prefix, i, output_suffix));
+        output_path.push(format!("{}{}{}", output_prefix, i, output_suffix));
         let mut golden_output = Vec::new();
         File::open(output_path)
             .unwrap()
@@ -25,7 +25,7 @@ fn test_mmvfmt() {
             .unwrap();
 
         let mut input_path = testdata_dir.clone();
-        input_path.push(&format!("{}{}{}", input_prefix, i, input_suffix));
+        input_path.push(format!("{}{}{}", input_prefix, i, input_suffix));
         let mmv = mmv::dump(&input_path).unwrap();
         let mut mmvdumm_output = Vec::new();
         write!(&mut mmvdumm_output, "{}", mmv).unwrap();
