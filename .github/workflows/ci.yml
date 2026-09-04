@@ -26,7 +26,7 @@ jobs:
         run: cargo test --verbose
 
       - name: Clippy
-        run: cargo clippy --lib --bins --tests --verbose
+        run: cargo clippy --all-targets --verbose -- -D warnings
 
   # Guards the rust-version in Cargo.toml so the declared MSRV can't silently
   # drift above the floor. The toolchain action pins 1.85 as this job's
